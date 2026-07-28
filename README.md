@@ -28,7 +28,7 @@ This project aims to develop a secure communication platform that is resilient a
 
 ### Frontend
 - **Web**: React + TypeScript + Vite
-- **Desktop**: Electron + React
+- **Desktop**: Electron + React .
 
 ## Project Structure
 
