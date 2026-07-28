@@ -6,17 +6,14 @@ This is the main FastAPI application entry point.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import os
 
-# Load environment variables
-load_dotenv()
+from core.config import settings
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Quantum-Resilient Communication System",
+    title=settings.PROJECT_NAME,
     description="Web-Based Secure Communication System Using Post-Quantum Cryptography and AI",
-    version="1.0.0",
+    version=settings.API_VERSION,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
 )
@@ -33,25 +30,19 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Health check endpoint."""
+    """Root endpoint with project information."""
     return {
-        "message": "Quantum-Resilient Communication System API",
-        "status": "operational",
-        "version": "1.0.0"
+        "project": settings.PROJECT_NAME,
+        "version": settings.API_VERSION,
+        "status": "running"
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check endpoint."""
+    """Health check endpoint."""
     return {
-        "status": "healthy",
-        "services": {
-            "api": "operational",
-            "database": "pending",
-            "ai": "pending",
-            "crypto": "pending"
-        }
+        "status": "healthy"
     }
 
 
