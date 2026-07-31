@@ -4,6 +4,8 @@ User Service for Quantum-Resilient Communication System
 This module provides business logic for user operations.
 """
 
+import uuid
+
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -41,7 +43,6 @@ class UserService:
         Returns:
             User object if found, None otherwise
         """
-        import uuid
         try:
             uid = uuid.UUID(user_id)
         except (ValueError, AttributeError):
@@ -165,9 +166,8 @@ class UserService:
         Raises:
             ValueError: If the user is not found
         """
-        import uuid as _uuid
         try:
-            uid = _uuid.UUID(str(user_id))
+            uid = uuid.UUID(str(user_id))
         except (ValueError, AttributeError):
             raise ValueError("Invalid user ID")
 
