@@ -31,7 +31,6 @@ def upgrade() -> None:
         sa.Column("profile_picture_url", sa.String(500), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("is_verified", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("public_key_id", sa.UUID(as_uuid=True), nullable=True, unique=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),

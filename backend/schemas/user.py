@@ -21,6 +21,11 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     profile_picture_url: Optional[str] = None
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    status_message: Optional[str] = None
+    last_seen: Optional[datetime] = None
+    is_online: bool = False
 
 
 class UserCreate(UserBase):
@@ -51,6 +56,81 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+
+
+class UserUpdate(BaseModel):
+    """
+    Schema for updating user profile.
+
+    Only editable fields are included. Username, email, and id are NOT editable here.
+    """
+
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    status_message: Optional[str] = None
+
+
+class UserPublic(BaseModel):
+    """
+    Minimal public profile for other users.
+
+    Excludes email and other sensitive fields.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    display_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    status_message: Optional[str] = None
+    is_online: bool = False
+    last_seen: Optional[datetime] = None
+
+
+class UserLogin(BaseModel):
+    """
+    Schema for user login.
+    
+    Accepts either username or email for authentication.
+    """
+    
+    username_or_email: str
+    password: str
+
+
+class TokenRefresh(BaseModel):
+    """
+    Schema for token refresh request.
+    
+    Accepts a refresh token to generate a new access token.
+    """
+
+    refresh_token: str
+
+
+class TokenResponse(BaseModel):
+    """
+    Schema for token response.
+    
+    Returned on successful authentication.
+    """
+    
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class TokenRefreshResponse(BaseModel):
+    """
+    Schema for token refresh response.
+    
+    Returns a new access token.
+    """
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 class UserInDB(UserResponse):

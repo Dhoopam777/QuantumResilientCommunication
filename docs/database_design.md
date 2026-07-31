@@ -24,7 +24,6 @@ This document defines the relational database schema for the Quantum-Resilient C
 | email | VARCHAR(255) | UNIQUE, NOT NULL | User's email address |
 | password_hash | VARCHAR(255) | NOT NULL | Bcrypt hashed password |
 | profile_picture_url | VARCHAR(500) | NULL | URL to profile picture |
-| public_key_id | UUID | UNIQUE, FOREIGN KEY | References active post-quantum public key |
 | is_active | BOOLEAN | DEFAULT TRUE | Account status |
 | is_verified | BOOLEAN | DEFAULT FALSE | Email verification status |
 | last_login | TIMESTAMP | NULL | Last successful login time |
@@ -132,7 +131,7 @@ This document defines the relational database schema for the Quantum-Resilient C
 | sender_id | UUID | FOREIGN KEY → Users(user_id), NOT NULL | User who sent the message |
 | content_encrypted | TEXT | NOT NULL | Encrypted message content (AES-256-GCM) |
 | content_hash | VARCHAR(255) | NOT NULL | SHA-256 hash for integrity verification |
-| message_type | VARCHAR(20) | DEFAULT 'text' | Type: 'text', 'system' |
+| message_type | VARCHAR(20) | DEFAULT 'text' | Type: 'text', 'image', 'file', 'audio', 'system' |
 | reply_to | UUID | FOREIGN KEY → Messages(message_id), NULL | Parent message if reply |
 | is_edited | BOOLEAN | DEFAULT FALSE | Edit status |
 | is_deleted | BOOLEAN | DEFAULT FALSE | Soft delete flag |
@@ -268,7 +267,6 @@ erDiagram
         varchar email UK
         varchar password_hash
         varchar profile_picture_url
-        uuid public_key_id FK
         boolean is_active
         boolean is_verified
         timestamp last_login

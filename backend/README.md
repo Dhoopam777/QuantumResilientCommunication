@@ -14,7 +14,7 @@ FastAPI-based backend service for the Quantum-Resilient Communication System.
 - **services/** - Business logic and service layer
 - **core/** - Core configurations and shared utilities
 - **tests/** - Unit and integration tests
-- **migrations/** - Database migration scripts (Alembic)
+- **migrations/** - Database migration scripts (Alembic) 
 - **models/** - SQLAlchemy ORM models
 - **schemas/** - Pydantic schemas for validation
 - **routers/** - FastAPI router definitions

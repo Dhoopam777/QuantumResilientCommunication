@@ -46,11 +46,18 @@ async def health_check():
     }
 
 
-# Include routers will be added here as they are developed
-# from backend.routers import auth, messaging, websocket
-# app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-# app.include_router(messaging.router, prefix="/api/messaging", tags=["messaging"])
-# app.include_router(websocket.router, prefix="/api/ws", tags=["websocket"])
+# Include routers
+from routers.auth import router as auth_router
+app.include_router(auth_router)
+
+from routers.conversation import router as conversation_router
+app.include_router(conversation_router)
+
+from routers.message import router as message_router
+app.include_router(message_router)
+
+from routers.websocket import router as websocket_router
+app.include_router(websocket_router)
 
 
 if __name__ == "__main__":
