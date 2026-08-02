@@ -77,5 +77,10 @@ class Conversation(Base, TimestampMixin):
         back_populates="conversation"
     )
 
+    attachments: Mapped[list["Attachment"]] = relationship(
+        "Attachment",
+        back_populates="conversation"
+    )
+
     def __repr__(self) -> str:
         return f"<Conversation(id={self.id}, is_group={self.is_group})>"

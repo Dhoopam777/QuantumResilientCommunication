@@ -16,6 +16,11 @@ langchain-community==0.0.10
 chromadb==0.4.18
 ollama==0.1.9
 
+# Attachment security
+Pillow>=10.0.0
+python-magic>=0.4.27
+python-multipart>=0.0.9
+
 # Testing dependencies
 pytest==7.4.3
 pytest-asyncio==0.21.1

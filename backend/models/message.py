@@ -102,6 +102,11 @@ class Message(Base, TimestampMixin):
         back_populates="sent_messages"
     )
 
+    attachments: Mapped[list["Attachment"]] = relationship(
+        "Attachment",
+        back_populates="message"
+    )
+
     def __repr__(self) -> str:
         return (
             f"<Message(id={self.id}, "

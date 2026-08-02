@@ -129,6 +129,10 @@ class User(Base, TimestampMixin):
         "Message",
         back_populates="sender"
     )
+    attachments: Mapped[list["Attachment"]] = relationship(
+        "Attachment",
+        back_populates="uploader"
+    )
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"

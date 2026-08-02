@@ -8,5 +8,6 @@ from models.user import User
 from models.conversation import Conversation
 from models.conversation_participant import ConversationParticipant
 from models.message import Message
+from models.attachment import Attachment
 
-__all__ = ["User", "Conversation", "ConversationParticipant", "Message"]
+__all__ = ["User", "Conversation", "ConversationParticipant", "Message", "Attachment"]

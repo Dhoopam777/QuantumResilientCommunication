@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     CHROMA_DIRECTORY: str = "chroma_db"
     TOP_K: int = 2
 
+    # Attachment Security
+    ATTACHMENT_STORAGE_PATH: str = "./storage/attachments"
+    ATTACHMENT_MAX_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+    ATTACHMENT_MAX_FILENAME_LENGTH: int = 255
+    ATTACHMENT_MAX_METADATA_LENGTH: int = 256
+    ATTACHMENT_UPLOAD_RATE_LIMIT: int = 10  # uploads per minute per user
+    ATTACHMENT_MAX_CONCURRENT_UPLOADS: int = 3
+    ATTACHMENT_THUMBNAIL_WIDTH: int = 200
+    ATTACHMENT_THUMBNAIL_HEIGHT: int = 200
+
 
 # Create a singleton settings instance
 settings = Settings()

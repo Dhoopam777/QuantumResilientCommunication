@@ -56,6 +56,9 @@ app.include_router(conversation_router)
 from routers.message import router as message_router
 app.include_router(message_router)
 
+from routers.attachment import router as attachment_router
+app.include_router(attachment_router)
+
 from routers.websocket import router as websocket_router
 app.include_router(websocket_router)
 

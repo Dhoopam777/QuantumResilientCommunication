@@ -87,6 +87,9 @@ htmlcov/
 backend/migrations/versions/*.pyc
 backend/migrations/__pycache__/
 
+# Attachment Storage (files outside web root, never committed)
+backend/storage/
+
 # Build artifacts
 dist/
 build/
