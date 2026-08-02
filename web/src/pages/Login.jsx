@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import Input from '../components/common/Input'
+import Button from '../components/common/Button'
 import DebugPanel from '../components/DebugPanel'
 
 export default function Login() {
@@ -26,32 +28,51 @@ export default function Login() {
     })
     if (res.status === 200 && res.data?.access_token) {
       login(res.data.access_token, res.data.refresh_token)
-      setTimeout(() => navigate('/test/dashboard'), 500)
+      setTimeout(() => navigate('/test/chat'), 500)
     }
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Login</h2>
-      <p className="text-sm text-gray-500 mb-4">POST /api/v1/auth/login</p>
-      <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
-        <input name="username_or_email" value={form.username_or_email} onChange={handleChange} placeholder="Username or Email" className="w-full border rounded px-3 py-2 text-sm" required />
-        <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Password" className="w-full border rounded px-3 py-2 text-sm" required />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Login</button>
+    <div className="max-w-md mx-auto">
+      <h2 className="text-2xl font-bold text-text-primary mb-2">Welcome back</h2>
+      <p className="text-sm text-text-secondary mb-6">Sign in to your QRC account</p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Username or Email"
+          name="username_or_email"
+          value={form.username_or_email}
+          onChange={handleChange}
+          placeholder="username or email"
+          required
+        />
+        <Input
+          label="Password"
+          name="password"
+          type="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder="••••••••"
+          required
+        />
+        <Button type="submit" className="w-full">Sign In</Button>
         {result.status && (
-          <span className={`ml-3 text-sm ${result.status < 300 ? 'text-green-600' : 'text-red-600'}`}>
+          <span className={`text-sm ${result.status < 300 ? 'text-success' : 'text-danger'}`}>
             Status: {result.status}
           </span>
         )}
       </form>
+
       {result.status === 200 && (
-        <p className="mt-3 text-sm text-green-600">
-          Login successful! JWT stored. <Link to="/test/dashboard" className="underline">Go to Dashboard</Link>
+        <p className="mt-3 text-sm text-success">
+          Login successful! Redirecting to chat...
         </p>
       )}
-      <p className="mt-3 text-sm text-gray-500">
-        Need an account? <Link to="/test/register" className="underline">Register</Link>
+
+      <p className="mt-4 text-sm text-text-secondary">
+        Need an account? <Link to="/test/register" className="text-accent hover:underline">Register</Link>
       </p>
+
       <DebugPanel request={result.request} response={result.response} error={result.error} />
     </div>
   )

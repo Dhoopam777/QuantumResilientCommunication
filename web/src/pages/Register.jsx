@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { authApi } from '../lib/api'
+import Input from '../components/common/Input'
+import Button from '../components/common/Button'
 import DebugPanel from '../components/DebugPanel'
 
 export default function Register() {
@@ -33,33 +35,69 @@ export default function Register() {
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Register</h2>
-      <p className="text-sm text-gray-500 mb-4">POST /api/v1/auth/register</p>
-      <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
-        <input name="username" value={form.username} onChange={handleChange} placeholder="Username" className="w-full border rounded px-3 py-2 text-sm" required />
-        <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email" className="w-full border rounded px-3 py-2 text-sm" required />
-        <input name="full_name" value={form.full_name} onChange={handleChange} placeholder="Full Name" className="w-full border rounded px-3 py-2 text-sm" />
-        <input name="profile_picture_url" value={form.profile_picture_url} onChange={handleChange} placeholder="Profile Picture URL" className="w-full border rounded px-3 py-2 text-sm" />
-        <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Password" className="w-full border rounded px-3 py-2 text-sm" required />
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="is_active" checked={form.is_active} onChange={handleChange} /> is_active
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="is_verified" checked={form.is_verified} onChange={handleChange} /> is_verified
-        </label>
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Register</button>
+    <div className="max-w-md mx-auto">
+      <h2 className="text-2xl font-bold text-text-primary mb-2">Create account</h2>
+      <p className="text-sm text-text-secondary mb-6">Join the QRC secure communication platform</p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Username"
+          name="username"
+          value={form.username}
+          onChange={handleChange}
+          placeholder="Choose a username"
+          required
+        />
+        <Input
+          label="Email"
+          name="email"
+          type="email"
+          value={form.email}
+          onChange={handleChange}
+          placeholder="you@example.com"
+          required
+        />
+        <Input
+          label="Full Name (optional)"
+          name="full_name"
+          value={form.full_name}
+          onChange={handleChange}
+          placeholder="Your full name"
+        />
+        <Input
+          label="Profile Picture URL (optional)"
+          name="profile_picture_url"
+          value={form.profile_picture_url}
+          onChange={handleChange}
+          placeholder="https://..."
+        />
+        <Input
+          label="Password"
+          name="password"
+          type="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder="••••••••"
+          required
+        />
+        <Button type="submit" className="w-full">Create Account</Button>
         {result.status && (
-          <span className={`ml-3 text-sm ${result.status < 300 ? 'text-green-600' : 'text-red-600'}`}>
+          <span className={`text-sm ${result.status < 300 ? 'text-success' : 'text-danger'}`}>
             Status: {result.status}
           </span>
         )}
       </form>
+
       {result.status === 201 && (
-        <p className="mt-3 text-sm text-green-600">
-          Registration successful! <Link to="/test/login" className="underline">Go to Login</Link>
+        <p className="mt-3 text-sm text-success">
+          Registration successful! <Link to="/test/login" className="text-accent hover:underline">Go to Login</Link>
         </p>
       )}
+
+      <p className="mt-4 text-sm text-text-secondary">
+        Already have an account? <Link to="/test/login" className="text-accent hover:underline">Sign in</Link>
+      </p>
+
       <DebugPanel request={result.request} response={result.response} error={result.error} />
     </div>
   )

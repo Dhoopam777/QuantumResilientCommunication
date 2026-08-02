@@ -4,30 +4,28 @@ import Layout from './components/Layout'
 import Register from './pages/Register'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-import ConversationList from './pages/ConversationList'
 import CreateConversation from './pages/CreateConversation'
-import ChatWindow from './pages/ChatWindow'
-import TokenViewer from './pages/TokenViewer'
+import ChatPage from './pages/ChatPage'
 import Profile from './pages/Profile'
+import TokenViewer from './pages/TokenViewer'
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/test" element={<Navigate to="/test/register" replace />} />
-            <Route path="/test/register" element={<Register />} />
-            <Route path="/test/login" element={<Login />} />
-            <Route path="/test/dashboard" element={<Dashboard />} />
-            <Route path="/test/conversations" element={<ConversationList />} />
-            <Route path="/test/conversations/new" element={<CreateConversation />} />
-            <Route path="/test/conversations/:conversationId" element={<ChatWindow />} />
-            <Route path="/test/profile" element={<Profile />} />
-            <Route path="/test/tokens" element={<TokenViewer />} />
-            <Route path="*" element={<Navigate to="/test" replace />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/test" element={<Navigate to="/test/chat" replace />} />
+          <Route path="/test/register" element={<Layout><Register /></Layout>} />
+          <Route path="/test/login" element={<Layout><Login /></Layout>} />
+          <Route path="/test/dashboard" element={<Navigate to="/test/chat" replace />} />
+          <Route path="/test/chat" element={<ChatPage />} />
+          <Route path="/test/chat/:conversationId" element={<ChatPage />} />
+          <Route path="/test/chat/:conversationId/details" element={<ChatPage />} />
+          <Route path="/test/conversations/new" element={<Layout><CreateConversation /></Layout>} />
+          <Route path="/test/profile" element={<Profile />} />
+          <Route path="/test/tokens" element={<Layout><TokenViewer /></Layout>} />
+          <Route path="*" element={<Navigate to="/test" replace />} />
+        </Routes>
       </BrowserRouter>
     </AuthProvider>
   )
