@@ -159,7 +159,7 @@ class TestSendMessage:
 
     def test_reply_to_accepted_without_validation(self, db_session: Session, test_conversation, test_user):
         """
-        Test that reply_to is accepted without validation.
+        Test that reply_to (legacy field) is accepted without validation.
         
         Verifies:
         - reply_to is stored even if it doesn't reference a real message
@@ -190,6 +190,187 @@ class TestSendMessage:
         assert "rollback" in source.lower()
         assert "try" in source.lower()
         assert "except" in source.lower()
+
+
+class TestReplySystem:
+    """Tests for the message reply system."""
+
+    def test_reply_to_valid_message(self, db_session: Session, test_conversation, test_user):
+        """
+        Test replying to a valid message in the same conversation.
+        
+        Verifies:
+        - Reply is created with reply_to_message_id set
+        - Reply relationship is preserved
+        """
+        # Create the parent message
+        parent = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="parent_content",
+            content_hash="parent_hash",
+            message_type="text",
+        )
+
+        # Reply to the parent
+        reply = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="reply_content",
+            content_hash="reply_hash",
+            message_type="text",
+            reply_to_message_id=parent.id,
+        )
+
+        assert reply is not None
+        assert reply.reply_to_message_id == parent.id
+        assert reply.conversation_id == test_conversation.id
+
+    def test_reply_to_soft_deleted_message_allowed(self, db_session: Session, test_conversation, test_user):
+        """
+        Test replying to a soft-deleted message is allowed.
+        
+        Verifies:
+        - Reply relationship is preserved even if parent is soft-deleted
+        """
+        # Create the parent message
+        parent = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="parent_content",
+            content_hash="parent_hash",
+            message_type="text",
+        )
+
+        # Soft delete the parent
+        parent.is_deleted = True
+        db_session.add(parent)
+        db_session.commit()
+
+        # Reply to the soft-deleted parent
+        reply = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="reply_to_deleted",
+            content_hash="reply_hash",
+            message_type="text",
+            reply_to_message_id=parent.id,
+        )
+
+        assert reply is not None
+        assert reply.reply_to_message_id == parent.id
+
+    def test_reply_to_nonexistent_message_rejected(self, db_session: Session, test_conversation, test_user):
+        """
+        Test replying to a non-existent message is rejected.
+        
+        Verifies:
+        - ValueError is raised
+        - Error message indicates reply target does not exist
+        """
+        fake_id = uuid.uuid4()
+
+        with pytest.raises(ValueError) as exc_info:
+            send_message(
+                db=db_session,
+                conversation_id=test_conversation.id,
+                sender_id=test_user.id,
+                content_encrypted="reply_content",
+                content_hash="reply_hash",
+                message_type="text",
+                reply_to_message_id=fake_id,
+            )
+
+        assert "does not exist" in str(exc_info.value).lower()
+
+    def test_reply_across_conversations_rejected(self, db_session: Session, test_conversation, test_user, test_user2):
+        """
+        Test replying to a message in a different conversation is rejected.
+        
+        Verifies:
+        - ValueError is raised
+        - Error message indicates different conversation
+        """
+        # Create a second conversation
+        conv2 = Conversation(
+            is_group=False,
+            group_name=None,
+            created_by=test_user2.id,
+            is_encrypted=True,
+        )
+        db_session.add(conv2)
+        db_session.flush()
+
+        # Add participants to conv2
+        p1 = ConversationParticipant(
+            conversation_id=conv2.id,
+            user_id=test_user.id,
+            role="member",
+        )
+        p2 = ConversationParticipant(
+            conversation_id=conv2.id,
+            user_id=test_user2.id,
+            role="admin",
+        )
+        db_session.add_all([p1, p2])
+        db_session.commit()
+
+        # Create a message in conv2
+        parent_in_conv2 = send_message(
+            db=db_session,
+            conversation_id=conv2.id,
+            sender_id=test_user2.id,
+            content_encrypted="conv2_content",
+            content_hash="conv2_hash",
+            message_type="text",
+        )
+
+        # Try to reply to it from test_conversation
+        with pytest.raises(ValueError) as exc_info:
+            send_message(
+                db=db_session,
+                conversation_id=test_conversation.id,
+                sender_id=test_user.id,
+                content_encrypted="cross_conversation_reply",
+                content_hash="cross_hash",
+                message_type="text",
+                reply_to_message_id=parent_in_conv2.id,
+            )
+
+        assert "different conversation" in str(exc_info.value).lower()
+
+    def test_reply_to_self_rejected(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that a message cannot reply to itself.
+        
+        Verifies:
+        - ValueError is raised
+        """
+        # Create a message
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="self_content",
+            content_hash="self_hash",
+            message_type="text",
+        )
+
+        # Try to reply to itself (simulate by using its own ID)
+        with pytest.raises(ValueError):
+            send_message(
+                db=db_session,
+                conversation_id=test_conversation.id,
+                sender_id=test_user.id,
+                content_encrypted="self_reply",
+                content_hash="self_reply_hash",
+                message_type="text",
+                reply_to_message_id=msg.id,
+            )
 
 
 class TestGetMessageById:

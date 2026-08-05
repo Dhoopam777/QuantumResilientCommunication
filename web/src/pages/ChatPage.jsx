@@ -27,6 +27,7 @@ export default function ChatPage() {
   const [wsStatus, setWsStatus] = useState('disconnected')
   const [wsMessages, setWsMessages] = useState([])
   const [search, setSearch] = useState('')
+  const [replyTo, setReplyTo] = useState(null)
   const wsClientRef = useRef(null)
   const seenMessageIdsRef = useRef(new Set())
   const wsTokenRef = useRef('')
@@ -137,18 +138,28 @@ export default function ChatPage() {
     }
   }, [isLoggedIn, conversationId, fetchConversation, fetchMessages])
 
-  const handleSend = async (content) => {
+  const handleReply = (message) => {
+    setReplyTo(message)
+  }
+
+  const handleCancelReply = () => {
+    setReplyTo(null)
+  }
+
+  const handleSend = async (content, replyTarget = null) => {
     if (!conversationId || !content.trim()) return
     const payload = {
       conversation_id: conversationId,
       content_encrypted: content,
       content_hash: btoa(content).slice(0, 32),
       message_type: 'text',
-      reply_to: null,
+      reply_to: replyTarget ? replyTarget.id : null,
+      reply_to_message_id: replyTarget ? replyTarget.id : null,
     }
     const res = await messageApi.send(payload)
     if (res.status === 201) {
       // WebSocket broadcast is the single source of truth for new messages
+      setReplyTo(null)
     }
   }
 
@@ -182,8 +193,17 @@ export default function ChatPage() {
       {conversationId ? (
         <>
           <ChatHeader conversation={conversation} currentUserId={user?.id} />
-          <MessageList messages={allMessages} currentUserId={user?.id} />
-          <MessageComposer onSend={handleSend} disabled={!conversation} />
+          <MessageList
+            messages={allMessages}
+            currentUserId={user?.id}
+            onReply={handleReply}
+          />
+          <MessageComposer
+            onSend={handleSend}
+            disabled={!conversation}
+            replyTo={replyTo}
+            onCancelReply={handleCancelReply}
+          />
         </>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center">

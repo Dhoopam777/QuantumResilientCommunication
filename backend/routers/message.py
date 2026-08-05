@@ -10,15 +10,17 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from schemas.message import MessageCreate, MessageResponse
+from schemas.message import MessageCreate, MessageResponse, ReplyPreview
 from services.message_service import (
     send_message,
     get_conversation_messages,
 )
 from core.dependencies import get_current_user
 from core.websocket_events import WS_EVENT_NEW_MESSAGE
+from core.audit_logger import log_reply_created, log_reply_rejected
 from managers.connection_manager import connection_manager
 from models.user import User
+from models.message import Message
 
 router = APIRouter(
     prefix="/api/v1/messages",
@@ -26,15 +28,55 @@ router = APIRouter(
 )
 
 
+def _build_reply_preview(db: Session, message: Message) -> ReplyPreview | None:
+    """
+    Build a ReplyPreview for a message that has a reply_to_message_id.
+
+    Loads the parent message (including soft-deleted ones) and returns
+    a minimal preview for rendering the reply indicator.
+
+    Args:
+        db: Database session
+        message: The message to build a preview for
+
+    Returns:
+        ReplyPreview or None if the message is not a reply
+    """
+    if not message.reply_to_message_id:
+        return None
+
+    parent = db.query(Message).filter(Message.id == message.reply_to_message_id).first()
+    if parent is None:
+        return None
+
+    return ReplyPreview(
+        id=parent.id,
+        sender_id=parent.sender_id,
+        content_encrypted=parent.content_encrypted,
+        message_type=parent.message_type,
+        is_deleted=parent.is_deleted,
+        created_at=parent.created_at,
+    )
+
+
+def _serialize_message(db: Session, message: Message) -> MessageResponse:
+    """
+    Serialize a Message to MessageResponse, including reply preview.
+    """
+    response = MessageResponse.model_validate(message)
+    response.reply_preview = _build_reply_preview(db, message)
+    return response
+
+
 @router.post(
     "/",
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Send a message",
-    description="Send a new message in a conversation.",
+    description="Send a new message in a conversation. Optionally reply to an existing message.",
     responses={
         201: {"description": "Message sent successfully"},
-        400: {"description": "Invalid message data"},
+        400: {"description": "Invalid message data or reply target"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - user is not a participant"},
     },
@@ -61,7 +103,7 @@ async def send_message_endpoint(
         MessageResponse: Created message data
 
     Raises:
-        HTTPException 400: If message data is invalid
+        HTTPException 400: If message data is invalid or reply target invalid
         HTTPException 401: If user is not authenticated
         HTTPException 403: If user is not a participant
     """
@@ -74,19 +116,39 @@ async def send_message_endpoint(
             content_hash=message_create.content_hash,
             message_type=message_create.message_type,
             reply_to=message_create.reply_to,
+            reply_to_message_id=message_create.reply_to_message_id,
         )
+
+        # Audit log reply creation
+        if message.reply_to_message_id:
+            log_reply_created(
+                str(current_user.id),
+                str(message.id),
+                str(message.conversation_id),
+                str(message.reply_to_message_id),
+            )
+
+        # Build the response with reply preview
+        response = _serialize_message(db, message)
 
         # Broadcast the saved message to all connected WebSocket participants
         # of this conversation. The message has already been committed to
         # PostgreSQL by send_message(), so this is a post-persistence broadcast.
-        message_data = MessageResponse.model_validate(message).model_dump(mode="json")
+        message_data = response.model_dump(mode="json")
         await connection_manager.broadcast_to_conversation(
             message_create.conversation_id,
             {"type": WS_EVENT_NEW_MESSAGE, "message": message_data},
         )
 
-        return MessageResponse.model_validate(message)
+        return response
     except ValueError as e:
+        # Audit log rejected replies
+        if message_create.reply_to_message_id:
+            log_reply_rejected(
+                str(current_user.id),
+                str(message_create.conversation_id),
+                str(e),
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
@@ -139,7 +201,7 @@ def get_conversation_messages_endpoint(
             limit=limit,
             offset=offset,
         )
-        return [MessageResponse.model_validate(m) for m in messages]
+        return [_serialize_message(db, m) for m in messages]
     except ValueError as e:
         error_detail = str(e)
         if "not a participant" in error_detail:

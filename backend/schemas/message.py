@@ -14,28 +14,47 @@ class MessageCreate(BaseModel):
     """
     Schema for creating a new message.
     """
-    
+
     conversation_id: uuid.UUID
     content_encrypted: str
     content_hash: str
     message_type: str = "text"
     reply_to: Optional[uuid.UUID] = None
+    reply_to_message_id: Optional[uuid.UUID] = None
+
+
+class ReplyPreview(BaseModel):
+    """
+    Minimal preview of the message being replied to.
+    Included in MessageResponse for rendering reply indicators.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    sender_id: uuid.UUID
+    content_encrypted: str
+    message_type: str
+    is_deleted: bool = False
+    created_at: datetime
 
 
 class MessageResponse(BaseModel):
     """
     Schema for message responses.
     """
-    
+
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: uuid.UUID
     conversation_id: uuid.UUID
     sender_id: uuid.UUID
     content_encrypted: str
     content_hash: str
     message_type: str
-    reply_to: Optional[uuid.UUID]
+    reply_to: Optional[uuid.UUID] = None
+    reply_to_message_id: Optional[uuid.UUID] = None
+    reply_preview: Optional[ReplyPreview] = None
     is_edited: bool
     is_deleted: bool
     created_at: datetime

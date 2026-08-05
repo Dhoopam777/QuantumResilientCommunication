@@ -24,7 +24,8 @@ class Message(Base, TimestampMixin):
         content_encrypted: Encrypted message content (AES-256-GCM)
         content_hash: SHA-256 hash for integrity verification
         message_type: Type of message ('text', 'image', 'file', 'audio', 'system')
-        reply_to: Parent message ID if this is a reply (no relationship yet)
+        reply_to: Parent message ID if this is a reply (legacy field)
+        reply_to_message_id: Parent message FK (self-referential)
         is_edited: Whether the message has been edited
         is_deleted: Soft delete flag
     """
@@ -74,7 +75,14 @@ class Message(Base, TimestampMixin):
     reply_to: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,
-        comment="Parent message ID if reply (no FK relationship yet)"
+        comment="Parent message ID if reply (legacy field, use reply_to_message_id)"
+    )
+
+    reply_to_message_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="RESTRICT"),
+        nullable=True,
+        comment="Parent message this message replies to (FK to messages.id)"
     )
 
     is_edited: Mapped[bool] = mapped_column(
@@ -105,6 +113,23 @@ class Message(Base, TimestampMixin):
     attachments: Mapped[list["Attachment"]] = relationship(
         "Attachment",
         back_populates="message"
+    )
+
+    # Self-referential relationship for replies
+    reply_to_message: Mapped[Optional["Message"]] = relationship(
+        "Message",
+        remote_side="Message.id",
+        foreign_keys=[reply_to_message_id],
+        back_populates="replies",
+        lazy="selectin",
+    )
+
+    replies: Mapped[list["Message"]] = relationship(
+        "Message",
+        remote_side="Message.id",
+        foreign_keys=[reply_to_message_id],
+        back_populates="reply_to_message",
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:

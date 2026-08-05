@@ -1,5 +1,5 @@
 """
-Audit Logger for Attachment Security Events
+Audit Logger for Security Events
 
 Logs security-relevant events for compliance and monitoring.
 NEVER logs: JWTs, file contents, absolute storage paths.
@@ -8,8 +8,8 @@ NEVER logs: JWTs, file contents, absolute storage paths.
 import logging
 import uuid
 
-# Dedicated logger for attachment security events
-logger = logging.getLogger("qrc.attachments")
+# Dedicated logger for security events
+logger = logging.getLogger("qrc.security")
 logger.setLevel(logging.INFO)
 
 
@@ -61,6 +61,24 @@ def log_rate_limited(user_id: str, action: str) -> None:
     logger.warning(
         "ATTACHMENT_RATE_LIMITED | user=%s action=%s",
         _safe_id(user_id), action,
+    )
+
+
+def log_reply_created(user_id: str, message_id: str, conversation_id: str,
+                      reply_to_message_id: str) -> None:
+    """Log a message reply creation."""
+    logger.info(
+        "MESSAGE_REPLY_CREATED | user=%s message=%s conversation=%s reply_to=%s",
+        _safe_id(user_id), _safe_id(message_id), _safe_id(conversation_id),
+        _safe_id(reply_to_message_id),
+    )
+
+
+def log_reply_rejected(user_id: str, conversation_id: str, reason: str) -> None:
+    """Log a rejected reply (invalid target, cross-conversation, etc.)."""
+    logger.warning(
+        "MESSAGE_REPLY_REJECTED | user=%s conversation=%s reason=%s",
+        _safe_id(user_id), _safe_id(conversation_id), reason,
     )
 
 
