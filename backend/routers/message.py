@@ -31,11 +31,14 @@ from core.audit_logger import (
     log_message_deleted,
     log_message_delete_rejected,
     log_reaction_event,
+    log_message_signature_event,
 )
 from core.rate_limiter import rate_limiter
 from managers.connection_manager import connection_manager
 from models.user import User
 from models.message import Message
+from core.config import settings
+from services.crypto_service import CryptoService
 from services.reaction_service import (
     reaction_summaries, toggle_reaction, remove_reaction,
 )
@@ -83,6 +86,24 @@ def _serialize_message(
     """
     Serialize a Message to MessageResponse, including reply preview.
     """
+    signature_status = "unverified"
+    if settings.PQC_ENABLED:
+        if not CryptoService.verify_message(message, message.sender):
+            log_message_signature_event(
+                "MESSAGE_VERIFICATION_FAILED",
+                str(message.sender_id),
+                str(message.id),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message verification failed",
+            )
+        signature_status = "verified"
+        log_message_signature_event(
+            "MESSAGE_VERIFIED",
+            str(message.sender_id),
+            str(message.id),
+        )
     return MessageResponse(
         id=message.id,
         conversation_id=message.conversation_id,
@@ -114,6 +135,7 @@ def _serialize_message(
             if current_user_id
             else []
         ),
+        signature_status=signature_status,
     )
 
 
@@ -167,6 +189,10 @@ async def send_message_endpoint(
             reply_to=message_create.reply_to,
             reply_to_message_id=message_create.reply_to_message_id,
         )
+        if message.signature:
+            log_message_signature_event(
+                "MESSAGE_SIGNED", str(current_user.id), str(message.id)
+            )
 
         # Audit log reply creation
         if message.reply_to_message_id:

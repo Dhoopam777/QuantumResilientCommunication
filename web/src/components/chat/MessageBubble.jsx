@@ -271,6 +271,8 @@ export default function MessageBubble({
               {message.is_edited && (
                 <span title={editedTime ? `Edited at ${editedTime}` : 'Edited'}>• Edited</span>
               )}
+              {message.signature_status === 'verified' && <span title="Verified message">• Verified ✓</span>}
+              {message.signature_status === 'failed' && <span title="Message verification failed">• Verification Failed</span>}
               {isOutgoing && <span>• ✓</span>}
             </div>
           </>

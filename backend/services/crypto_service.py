@@ -6,6 +6,7 @@ handled here.
 """
 
 import base64
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from pqcrypto.sign import ml_dsa_65
 
 
 ALGORITHM_VERSION = "ML-KEM-768+ML-DSA-65"
+SIGNATURE_ALGORITHM = "ML-DSA-65"
 
 
 class CryptoService:
@@ -154,6 +156,91 @@ class CryptoService:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         return expires_at <= datetime.now(timezone.utc)
+
+    @staticmethod
+    def _message_payload(
+        conversation_id: uuid.UUID,
+        sender_id: uuid.UUID,
+        message_type: str,
+        content_encrypted: str,
+        signature_created_at: datetime,
+        attachments_metadata: list[dict] | None = None,
+    ) -> bytes:
+        timestamp = signature_created_at.astimezone(timezone.utc).isoformat()
+        payload = {
+            "conversation_id": str(conversation_id),
+            "sender_id": str(sender_id),
+            "message_type": message_type,
+            "content_encrypted": content_encrypted,
+            "attachments": attachments_metadata or [],
+            "timestamp": timestamp,
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def sign_message(
+        user: User,
+        conversation_id: uuid.UUID,
+        message_type: str,
+        content_encrypted: str,
+        signature_created_at: datetime,
+        attachments_metadata: list[dict] | None = None,
+    ) -> str:
+        """Sign immutable message content with the sender's ML-DSA key."""
+        if not settings.PQC_ENABLED or settings.PQC_ALGORITHM != ALGORITHM_VERSION:
+            raise RuntimeError("Message signing is unavailable")
+        if user is None or not user.pq_signature_private_key_encrypted:
+            raise RuntimeError("Sender signing key unavailable")
+        private_key = CryptoService.decrypt_private_key(
+            user.pq_signature_private_key_encrypted
+        )
+        try:
+            signature = ml_dsa_65.sign(
+                private_key,
+                CryptoService._message_payload(
+                    conversation_id,
+                    user.id,
+                    message_type,
+                    content_encrypted,
+                    signature_created_at,
+                    attachments_metadata,
+                ),
+            )
+            return CryptoService._encode(signature)
+        finally:
+            del private_key
+
+    @staticmethod
+    def verify_message(
+        message,
+        sender: User,
+        attachments_metadata: list[dict] | None = None,
+    ) -> bool:
+        """Verify a stored message signature without exposing signature bytes."""
+        if (
+            not message.signature
+            or message.signature_algorithm != SIGNATURE_ALGORITHM
+            or not message.signature_created_at
+            or not sender.pq_signature_public_key
+        ):
+            return False
+        signature_created_at = message.signature_created_at
+        if signature_created_at.tzinfo is None:
+            signature_created_at = signature_created_at.replace(tzinfo=timezone.utc)
+        try:
+            signature = CryptoService._decode(message.signature)
+            public_key = CryptoService._decode(sender.pq_signature_public_key)
+            payload = CryptoService._message_payload(
+                message.conversation_id,
+                message.sender_id,
+                message.message_type,
+                message.content_encrypted,
+                signature_created_at,
+                attachments_metadata,
+            )
+            return ml_dsa_65.verify(public_key, payload, signature)
+        except (RuntimeError, TypeError, ValueError):
+            return False
 
     @staticmethod
     def public_key_metadata(user: User) -> dict:

@@ -37,7 +37,9 @@ with a Fernet key supplied by the `PQC_MASTER_KEY` environment variable. The
 value must be a URL-safe base64 encoding of 32 random bytes; it is not a
 password and no password KDF is applied.
 Message encryption is not part of this phase. Keep `PQC_ENABLED=false` for
-development unless a strong master key is configured.
+development unless a strong master key is configured. ML-DSA message
+signatures are enabled with the same PQC configuration and do not encrypt
+message content.
 
 Session establishment uses ML-KEM-768 encapsulation and HKDF-SHA256 to derive
 an AES-256 session key in memory. Only the KEM ciphertext and expiry metadata

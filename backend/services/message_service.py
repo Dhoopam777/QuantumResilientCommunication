@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 
 from models.message import Message
 from models.conversation import Conversation
+from models.user import User
+from services.crypto_service import CryptoService
+from core.config import settings
 from services.conversation_service import is_participant
 from sqlalchemy import asc
 
@@ -76,6 +79,7 @@ class MessageService:
         message_type: str = "text",
         reply_to: Optional[uuid.UUID] = None,
         reply_to_message_id: Optional[uuid.UUID] = None,
+        attachments_metadata: Optional[list[dict]] = None,
     ) -> Message:
         """
         Send a message in a conversation.
@@ -125,6 +129,24 @@ class MessageService:
         # Validate reply target (if any)
         MessageService._validate_reply_target(db, conversation_id, reply_to_message_id)
 
+        signature_created_at = datetime.now(timezone.utc)
+        sender = db.query(User).filter(User.id == sender_id).first()
+        signature = None
+        signature_algorithm = None
+        if settings.PQC_ENABLED:
+            if sender is None:
+                raise ValueError("Message authentication failed")
+            try:
+                signature = CryptoService.sign_message(
+                    sender,
+                    conversation_id,
+                    message_type,
+                    content_encrypted,
+                    signature_created_at,
+                    attachments_metadata,
+                )
+            except (RuntimeError, ValueError):
+                raise ValueError("Message authentication failed")
         # Create the message
         message = Message(
             conversation_id=conversation_id,
@@ -134,6 +156,10 @@ class MessageService:
             message_type=message_type,
             reply_to=reply_to,
             reply_to_message_id=reply_to_message_id,
+            created_at=signature_created_at,
+            signature=signature,
+            signature_algorithm="ML-DSA-65" if signature else None,
+            signature_created_at=signature_created_at if signature else None,
         )
         db.add(message)
 
@@ -221,6 +247,21 @@ class MessageService:
         # Update only the text content fields
         message.content_encrypted = content_encrypted
         message.content_hash = content_hash
+        if settings.PQC_ENABLED:
+            sender = db.query(User).filter(User.id == user_id).first()
+            try:
+                signature_created_at = datetime.now(timezone.utc)
+                message.signature = CryptoService.sign_message(
+                    sender,
+                    message.conversation_id,
+                    message.message_type,
+                    content_encrypted,
+                    signature_created_at,
+                )
+                message.signature_algorithm = "ML-DSA-65"
+                message.signature_created_at = signature_created_at
+            except (RuntimeError, ValueError):
+                raise ValueError("Message authentication failed")
         message.is_edited = True
         message.edited_at = datetime.now(timezone.utc)
 

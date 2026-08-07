@@ -125,6 +125,12 @@ class Message(Base, TimestampMixin):
         comment="Deletion mode: 'me' (hidden for requesting user) or 'everyone' (hidden for all)"
     )
 
+    signature: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signature_algorithm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    signature_created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Relationships
     conversation: Mapped["Conversation"] = relationship(
         "Conversation",

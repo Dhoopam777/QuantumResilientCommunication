@@ -120,3 +120,4 @@ class MessageResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     reactions: list[ReactionSummary] = Field(default_factory=list)
+    signature_status: str = "unverified"

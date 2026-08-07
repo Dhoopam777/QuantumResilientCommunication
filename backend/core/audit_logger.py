@@ -203,6 +203,22 @@ def log_session_event(
         f" reason={reason[:80]}" if reason else "",
     )
 
+
+def log_message_signature_event(
+    event: str,
+    user_id: str,
+    message_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Log message signature lifecycle without cryptographic material."""
+    logger.info(
+        "%s | user=%s%s%s",
+        event,
+        _safe_id(user_id),
+        f" message={_safe_id(message_id)}" if message_id else "",
+        f" reason={reason[:80]}" if reason else "",
+    )
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:
