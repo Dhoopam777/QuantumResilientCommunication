@@ -6,7 +6,6 @@ handled here.
 """
 
 import base64
-import hashlib
 from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
@@ -25,12 +24,25 @@ class CryptoService:
 
     @staticmethod
     def _cipher() -> Fernet:
-        if len(settings.PQC_MASTER_KEY) < 32:
-            raise RuntimeError("PQC_MASTER_KEY must contain at least 32 characters")
-        derived = base64.urlsafe_b64encode(
-            hashlib.sha256(settings.PQC_MASTER_KEY.encode("utf-8")).digest()
-        )
-        return Fernet(derived)
+        configured_key = settings.PQC_MASTER_KEY.strip()
+        try:
+            raw_key = base64.b64decode(
+                configured_key.encode("ascii"),
+                altchars=b"-_",
+                validate=True,
+            )
+        except (UnicodeEncodeError, ValueError, base64.binascii.Error) as exc:
+            raise RuntimeError(
+                "PQC_MASTER_KEY must be a URL-safe base64-encoded 32-byte key"
+            ) from exc
+        if (
+            len(raw_key) != 32
+            or base64.urlsafe_b64encode(raw_key).decode("ascii") != configured_key
+        ):
+            raise RuntimeError(
+                "PQC_MASTER_KEY must be a URL-safe base64-encoded 32-byte key"
+            )
+        return Fernet(configured_key.encode("ascii"))
 
     @staticmethod
     def _encode(value: bytes) -> str:
@@ -49,6 +61,10 @@ class CryptoService:
     def generate_identity(user: User) -> None:
         if not settings.PQC_ENABLED:
             return
+        if settings.PQC_ALGORITHM != ALGORITHM_VERSION:
+            raise RuntimeError(
+                f"Unsupported PQC_ALGORITHM: {settings.PQC_ALGORITHM}"
+            )
         kem_public, kem_private = ml_kem_768.generate_keypair()
         signature_public, signature_private = ml_dsa_65.generate_keypair()
         user.pq_kem_public_key = CryptoService._encode(kem_public)
@@ -65,4 +81,5 @@ class CryptoService:
             "kem_public_key": user.pq_kem_public_key,
             "signature_public_key": user.pq_signature_public_key,
             "algorithm_version": user.pq_algorithm_version,
+            "created_at": user.pq_key_created_at,
         }

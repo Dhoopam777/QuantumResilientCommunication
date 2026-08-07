@@ -27,6 +27,7 @@ def get_public_key(
         or not target.pq_kem_public_key
         or not target.pq_signature_public_key
         or not target.pq_algorithm_version
+        or not target.pq_key_created_at
     ):
         log_pqc_event("PQC_OPERATION_FAILED", str(current_user.id), "public key unavailable")
         raise HTTPException(

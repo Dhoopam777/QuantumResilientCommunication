@@ -1,6 +1,7 @@
 """Post-quantum identity key tests."""
 
 import base64
+import secrets
 
 from core.config import settings
 from core.security import create_access_token
@@ -12,9 +13,13 @@ def headers(user):
     return {"Authorization": f"Bearer {create_access_token(subject=str(user.id))}"}
 
 
+def master_key():
+    return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
+
+
 def test_registration_generates_encrypted_pqc_identity(client, db_session, monkeypatch):
     monkeypatch.setattr(settings, "PQC_ENABLED", True)
-    monkeypatch.setattr(settings, "PQC_MASTER_KEY", "test-only-master-key-0123456789012345")
+    monkeypatch.setattr(settings, "PQC_MASTER_KEY", master_key())
     response = client.post(
         "/api/v1/auth/register",
         json={"username": "pqc_user", "email": "pqc@example.com", "password": "SecurePass123!"},
@@ -33,7 +38,7 @@ def test_registration_generates_encrypted_pqc_identity(client, db_session, monke
 
 def test_public_key_api_excludes_private_material(client, db_session, test_user, monkeypatch):
     monkeypatch.setattr(settings, "PQC_ENABLED", True)
-    monkeypatch.setattr(settings, "PQC_MASTER_KEY", "test-only-master-key-0123456789012345")
+    monkeypatch.setattr(settings, "PQC_MASTER_KEY", master_key())
     CryptoService.generate_identity(test_user)
     db_session.commit()
     response = client.get(
@@ -41,5 +46,10 @@ def test_public_key_api_excludes_private_material(client, db_session, test_user,
         headers=headers(test_user),
     )
     assert response.status_code == 200
-    assert set(response.json()) == {"kem_public_key", "signature_public_key", "algorithm_version"}
+    assert set(response.json()) == {
+        "kem_public_key",
+        "signature_public_key",
+        "algorithm_version",
+        "created_at",
+    }
     assert "private" not in response.text.lower()

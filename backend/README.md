@@ -33,6 +33,8 @@ When enabled, registration generates standardized ML-KEM-768 and ML-DSA-65
 identity keys through the maintained `pqcrypto` Python bindings. This is the
 official naming used by the binding; no deprecated Kyber/Dilithium API is used.
 Public keys are stored for identity exchange, while private keys are encrypted
-with a Fernet key derived from the `PQC_MASTER_KEY` environment variable.
+with a Fernet key supplied by the `PQC_MASTER_KEY` environment variable. The
+value must be a URL-safe base64 encoding of 32 random bytes; it is not a
+password and no password KDF is applied.
 Message encryption is not part of this phase. Keep `PQC_ENABLED=false` for
 development unless a strong master key is configured.

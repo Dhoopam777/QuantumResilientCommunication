@@ -6,6 +6,7 @@ All settings are loaded from environment variables or .env file.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
 from typing import Optional
 
 
@@ -71,6 +72,16 @@ class Settings(BaseSettings):
     PQC_ENABLED: bool = False
     PQC_ALGORITHM: str = "ML-KEM-768+ML-DSA-65"
     PQC_MASTER_KEY: str = ""
+
+    @model_validator(mode="after")
+    def validate_pqc_configuration(self):
+        if self.PQC_ENABLED and not self.PQC_MASTER_KEY.strip():
+            raise ValueError(
+                "PQC_MASTER_KEY is required when PQC_ENABLED is true"
+            )
+        if self.PQC_ENABLED and self.PQC_ALGORITHM != "ML-KEM-768+ML-DSA-65":
+            raise ValueError("Unsupported PQC_ALGORITHM")
+        return self
 
 
 # Create a singleton settings instance
