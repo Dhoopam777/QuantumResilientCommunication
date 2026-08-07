@@ -69,6 +69,9 @@ app.include_router(users_router)
 from routers.group import router as group_router
 app.include_router(group_router)
 
+from routers.crypto import router as crypto_router
+app.include_router(crypto_router)
+
 
 if __name__ == "__main__":
     import uvicorn

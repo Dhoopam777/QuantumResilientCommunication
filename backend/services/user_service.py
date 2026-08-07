@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from models.user import User
 from schemas.user import UserCreate, UserUpdate
 from core.security import hash_password, verify_password
+from services.crypto_service import CryptoService
 
 
 class UserService:
@@ -105,8 +106,9 @@ class UserService:
         
         # Add to database
         db.add(db_user)
-        
+
         try:
+            CryptoService.generate_identity(db_user)
             db.commit()
             db.refresh(db_user)
             return db_user

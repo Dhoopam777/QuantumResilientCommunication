@@ -22,6 +22,7 @@ from schemas.user import (
 from services.user_service import create_user, authenticate_user, update_profile
 from services.email_verification_service import issue_verification, verify_token
 from core.audit_logger import log_email_verification_event
+from core.audit_logger import log_pqc_event
 from core.rate_limiter import rate_limiter
 from core.security import create_access_token, create_refresh_token, decode_token
 from core.dependencies import get_current_user
@@ -60,6 +61,8 @@ def register(user_create: UserCreate, db: Session = Depends(get_db)) -> UserResp
     """
     try:
         user = create_user(db=db, user_create=user_create)
+        if user.pq_key_created_at:
+            log_pqc_event("PQC_KEYS_GENERATED", str(user.id))
         issue_verification(db, user)
         log_email_verification_event("EMAIL_VERIFICATION_SENT", str(user.id))
         return UserResponse.model_validate(user)
@@ -67,6 +70,13 @@ def register(user_create: UserCreate, db: Session = Depends(get_db)) -> UserResp
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
+        )
+    except RuntimeError as e:
+        db.rollback()
+        log_pqc_event("PQC_OPERATION_FAILED", "unknown", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cryptographic identity setup is unavailable",
         )
 
 

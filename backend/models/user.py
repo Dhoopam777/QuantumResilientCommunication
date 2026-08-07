@@ -103,6 +103,15 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    pq_signature_public_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pq_signature_private_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pq_kem_public_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pq_kem_private_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pq_algorithm_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    pq_key_created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     display_name: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,

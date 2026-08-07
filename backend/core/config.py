@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "no-reply@example.com"
     SMTP_USE_TLS: bool = True
+    PQC_ENABLED: bool = False
+    PQC_ALGORITHM: str = "ML-KEM-768+ML-DSA-65"
+    PQC_MASTER_KEY: str = ""
 
 
 # Create a singleton settings instance

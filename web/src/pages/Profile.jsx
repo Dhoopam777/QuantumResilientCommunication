@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { profileApi } from '../lib/api'
+import { cryptoApi } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import ChatLayout from '../components/chat/ChatLayout'
 import ProfileHeader from '../components/profile/ProfileHeader'
@@ -12,6 +13,14 @@ export default function Profile() {
   const [result, setResult] = useState({ response: null, error: null, status: null })
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  const [pqc, setPqc] = useState(null)
+
+  useEffect(() => {
+    if (!user?.username) return
+    cryptoApi.publicKey(user.username).then((res) => {
+      if (res.status === 200) setPqc(res.data)
+    })
+  }, [user?.username])
 
   if (!isLoggedIn) {
     return <p className="text-gray-500">Please log in first.</p>
@@ -49,6 +58,17 @@ export default function Profile() {
             </div>
             <div>
               <ProfileStats user={user} />
+              <div className="p-4 border-t border-border">
+                <h3 className="font-semibold text-sm text-text-primary">Quantum Security</h3>
+                {pqc ? (
+                  <div className="mt-2 text-xs text-text-secondary space-y-1">
+                    <div>Algorithms: {pqc.algorithm_version}</div>
+                    <div>Key Created: {user.pq_key_created_at ? new Date(user.pq_key_created_at).toLocaleDateString() : 'available'}</div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-text-muted">Quantum identity keys are unavailable.</p>
+                )}
+              </div>
             </div>
           </div>
           {result.status && (
