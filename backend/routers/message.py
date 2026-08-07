@@ -10,7 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from schemas.message import MessageCreate, MessageEdit, MessageDelete, MessageResponse, ReplyPreview
+from schemas.message import (
+    MessageCreate, MessageEdit, MessageDelete, MessageResponse, ReplyPreview,
+    ReactionCreate, ReactionSummary, ReactionUser,
+)
 from services.message_service import (
     send_message,
     edit_message,
@@ -19,6 +22,7 @@ from services.message_service import (
 )
 from core.dependencies import get_current_user
 from core.websocket_events import WS_EVENT_NEW_MESSAGE, WS_EVENT_MESSAGE_EDITED, WS_EVENT_MESSAGE_DELETED
+from core.websocket_events import WS_EVENT_REACTION_ADDED, WS_EVENT_REACTION_REMOVED
 from core.audit_logger import (
     log_reply_created,
     log_reply_rejected,
@@ -26,11 +30,15 @@ from core.audit_logger import (
     log_message_edit_rejected,
     log_message_deleted,
     log_message_delete_rejected,
+    log_reaction_event,
 )
 from core.rate_limiter import rate_limiter
 from managers.connection_manager import connection_manager
 from models.user import User
 from models.message import Message
+from services.reaction_service import (
+    reaction_summaries, toggle_reaction, remove_reaction,
+)
 
 router = APIRouter(
     prefix="/api/v1/messages",
@@ -69,13 +77,44 @@ def _build_reply_preview(db: Session, message: Message) -> ReplyPreview | None:
     )
 
 
-def _serialize_message(db: Session, message: Message) -> MessageResponse:
+def _serialize_message(
+    db: Session, message: Message, current_user_id: uuid.UUID | None = None
+) -> MessageResponse:
     """
     Serialize a Message to MessageResponse, including reply preview.
     """
-    response = MessageResponse.model_validate(message)
-    response.reply_preview = _build_reply_preview(db, message)
-    return response
+    return MessageResponse(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_id=message.sender_id,
+        content_encrypted=message.content_encrypted,
+        content_hash=message.content_hash,
+        message_type=message.message_type,
+        reply_to=message.reply_to,
+        reply_to_message_id=message.reply_to_message_id,
+        reply_preview=_build_reply_preview(db, message),
+        is_edited=message.is_edited,
+        edited_at=message.edited_at,
+        is_deleted=message.is_deleted,
+        deleted_at=message.deleted_at,
+        deleted_by=message.deleted_by,
+        delete_type=message.delete_type,
+        created_at=message.created_at,
+        updated_at=message.updated_at,
+        reactions=(
+            [
+                ReactionSummary(
+                    emoji=item["emoji"],
+                    count=item["count"],
+                    reacted_by_me=item["reacted_by_me"],
+                    users=[ReactionUser(**user) for user in item["users"]],
+                )
+                for item in reaction_summaries(message, current_user_id)
+            ]
+            if current_user_id
+            else []
+        ),
+    )
 
 
 @router.post(
@@ -139,7 +178,7 @@ async def send_message_endpoint(
             )
 
         # Build the response with reply preview
-        response = _serialize_message(db, message)
+        response = _serialize_message(db, message, current_user.id)
 
         # Broadcast the saved message to all connected WebSocket participants
         # of this conversation. The message has already been committed to
@@ -255,7 +294,7 @@ async def edit_message_endpoint(
         )
 
         # Build the response with reply preview
-        response = _serialize_message(db, updated)
+        response = _serialize_message(db, updated, current_user.id)
 
         # Broadcast the edited message to all connected WebSocket participants
         message_data = response.model_dump(mode="json")
@@ -380,7 +419,7 @@ async def delete_message_endpoint(
         )
 
         # Build the response with reply preview
-        response = _serialize_message(db, updated)
+        response = _serialize_message(db, updated, current_user.id)
 
         # Broadcast the deleted message to all connected WebSocket participants
         message_data = response.model_dump(mode="json")
@@ -459,7 +498,7 @@ def get_conversation_messages_endpoint(
             limit=limit,
             offset=offset,
         )
-        return [_serialize_message(db, m) for m in messages]
+        return [_serialize_message(db, m, current_user.id) for m in messages]
     except ValueError as e:
         error_detail = str(e)
         if "not a participant" in error_detail:
@@ -471,3 +510,80 @@ def get_conversation_messages_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_detail,
         )
+
+
+async def _broadcast_reaction(
+    message: Message, current_user_id: uuid.UUID, added: bool, emoji: str
+) -> None:
+    """Broadcast only the aggregate state to authorized subscribers."""
+    await connection_manager.broadcast_to_conversation(
+        message.conversation_id,
+        {
+            "type": WS_EVENT_REACTION_ADDED if added else WS_EVENT_REACTION_REMOVED,
+            "message_id": str(message.id),
+            "conversation_id": str(message.conversation_id),
+            "emoji": emoji,
+            "reactions": reaction_summaries(message, current_user_id),
+        },
+    )
+
+
+@router.post(
+    "/{message_id}/reactions",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Toggle a message reaction",
+)
+async def toggle_reaction_endpoint(
+    message_id: uuid.UUID,
+    reaction: ReactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    rate_limiter.check_reaction_rate(str(current_user.id))
+    try:
+        message, added = toggle_reaction(db, message_id, current_user.id, reaction.emoji)
+    except LookupError:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    except PermissionError as error:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error))
+    except ValueError as error:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    event = "REACTION_ADDED" if added else "REACTION_REMOVED"
+    log_reaction_event(event, str(current_user.id), str(message.conversation_id), str(message.id), reaction.emoji)
+    await _broadcast_reaction(message, current_user.id, added, reaction.emoji)
+    return _serialize_message(db, message, current_user.id)
+
+
+@router.delete(
+    "/{message_id}/reactions",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Remove a message reaction",
+)
+async def remove_reaction_endpoint(
+    message_id: uuid.UUID,
+    reaction: ReactionCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    rate_limiter.check_reaction_rate(str(current_user.id))
+    try:
+        message = remove_reaction(db, message_id, current_user.id, reaction.emoji)
+    except LookupError:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    except PermissionError as error:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error))
+    except ValueError as error:
+        log_reaction_event("REACTION_REJECTED", str(current_user.id), "unknown", str(message_id), reaction.emoji)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    log_reaction_event("REACTION_REMOVED", str(current_user.id), str(message.conversation_id), str(message.id), reaction.emoji)
+    await _broadcast_reaction(message, current_user.id, False, reaction.emoji)
+    return _serialize_message(db, message, current_user.id)

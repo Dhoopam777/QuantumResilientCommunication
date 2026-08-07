@@ -61,6 +61,24 @@ class MessageDelete(BaseModel):
     )
 
 
+class ReactionCreate(BaseModel):
+    """Schema for the fixed, Unicode-only phase 8.2D reaction set."""
+
+    emoji: str = Field(..., min_length=1, max_length=32)
+
+
+class ReactionUser(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class ReactionSummary(BaseModel):
+    emoji: str
+    count: int
+    reacted_by_me: bool = False
+    users: list[ReactionUser] = Field(default_factory=list)
+
+
 class ReplyPreview(BaseModel):
     """
     Minimal preview of the message being replied to.
@@ -101,3 +119,4 @@ class MessageResponse(BaseModel):
     delete_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    reactions: list[ReactionSummary] = Field(default_factory=list)

@@ -141,6 +141,13 @@ class Message(Base, TimestampMixin):
         back_populates="message"
     )
 
+    reactions: Mapped[list["MessageReaction"]] = relationship(
+        "MessageReaction",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     # Self-referential relationship for replies
     reply_to_message: Mapped[Optional["Message"]] = relationship(
         "Message",

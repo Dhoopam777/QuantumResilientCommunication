@@ -23,15 +23,18 @@ class RateLimiter:
         max_concurrent: int = settings.ATTACHMENT_MAX_CONCURRENT_UPLOADS,
         max_edits_per_minute: int = settings.MESSAGE_EDIT_RATE_LIMIT,
         max_deletes_per_minute: int = settings.MESSAGE_DELETE_RATE_LIMIT,
+        max_reactions_per_minute: int = settings.MESSAGE_REACTION_RATE_LIMIT,
     ):
         self.max_uploads_per_minute = max_uploads_per_minute
         self.max_concurrent = max_concurrent
         self.max_edits_per_minute = max_edits_per_minute
         self.max_deletes_per_minute = max_deletes_per_minute
+        self.max_reactions_per_minute = max_reactions_per_minute
         self._upload_times: dict[str, list[float]] = defaultdict(list)
         self._concurrent: dict[str, int] = defaultdict(int)
         self._edit_times: dict[str, list[float]] = defaultdict(list)
         self._delete_times: dict[str, list[float]] = defaultdict(list)
+        self._reaction_times: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
 
     def _cleanup_old(self, user_id: str, now: float) -> None:
@@ -130,6 +133,23 @@ class RateLimiter:
                     f"concurrent uploads allowed.",
                 )
             self._concurrent[user_id] += 1
+
+    def check_reaction_rate(self, user_id: str) -> None:
+        """Check the per-user reaction mutation limit."""
+        from fastapi import HTTPException, status
+
+        with self._lock:
+            now = time.time()
+            self._reaction_times[user_id] = [
+                t for t in self._reaction_times[user_id] if now - t < 60.0
+            ]
+            if len(self._reaction_times[user_id]) >= self.max_reactions_per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Reaction rate limit exceeded",
+                    headers={"Retry-After": "60"},
+                )
+            self._reaction_times[user_id].append(now)
 
     def release_concurrent(self, user_id: str) -> None:
         """Release a concurrent upload slot."""

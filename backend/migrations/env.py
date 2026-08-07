@@ -25,6 +25,7 @@ from models.user import User  # noqa: F401
 from models.conversation import Conversation  # noqa: F401
 from models.conversation_participant import ConversationParticipant  # noqa: F401
 from models.message import Message  # noqa: F401
+from models.message_reaction import MessageReaction  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

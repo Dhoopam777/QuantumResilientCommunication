@@ -12,6 +12,7 @@ export default function MessageList({
   editingId,
   onStartEdit,
   onCancelEdit,
+  onReact,
 }) {
   const bottomRef = useRef(null)
   const messageRefs = useRef({})
@@ -76,6 +77,8 @@ export default function MessageList({
             isEditing={editingId === m.id}
             onStartEdit={onStartEdit}
             onCancelEdit={onCancelEdit}
+            onReact={onReact}
+            currentUserId={currentUserId}
           />
         </div>
       ))}

@@ -117,6 +117,21 @@ export default function ChatPage() {
       )
     })
 
+    const handleReactionEvent = (data) => {
+      if (!data.message_id || !Array.isArray(data.reactions)) return
+      const reactions = data.reactions.map((reaction) => ({
+        ...reaction,
+        reacted_by_me: reaction.users?.some((reactionUser) => reactionUser.id === user?.id) || false,
+      }))
+      const update = (prev) => prev.map((m) => (
+        m.id === data.message_id ? { ...m, reactions } : m
+      ))
+      setMessages(update)
+      setWsMessages(update)
+    }
+    wsClient.on('reaction_added', handleReactionEvent)
+    wsClient.on('reaction_removed', handleReactionEvent)
+
     wsClient.on('auth_success', () => {
       setWsStatus('connected')
       wsClient.joinConversation(conversationId)
@@ -221,6 +236,18 @@ export default function ChatPage() {
       const err = new Error(res.data?.detail || 'Failed to delete message')
       throw err
     }
+
+  }
+
+  const handleReact = async (message, emoji) => {
+    const res = await messageApi.toggleReaction(message.id, emoji)
+    if (res.status === 200 && res.data) {
+      const update = (prev) => prev.map((m) => (m.id === message.id ? { ...m, ...res.data } : m))
+      setMessages(update)
+      setWsMessages(update)
+    } else {
+      throw new Error(res.data?.detail || 'Failed to update reaction')
+    }
   }
 
   const handleSend = async (content, replyTarget = null) => {
@@ -279,6 +306,7 @@ export default function ChatPage() {
             editingId={editingId}
             onStartEdit={handleStartEdit}
             onCancelEdit={handleCancelEdit}
+            onReact={handleReact}
           />
           <MessageComposer
             onSend={handleSend}

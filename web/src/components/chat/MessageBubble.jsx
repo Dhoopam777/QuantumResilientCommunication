@@ -43,12 +43,15 @@ export default function MessageBubble({
   isEditing,
   onStartEdit,
   onCancelEdit,
+  onReact,
+  currentUserId,
 }) {
   const [editContent, setEditContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [editError, setEditError] = useState(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showReactionPicker, setShowReactionPicker] = useState(false)
   const editInputRef = useRef(null)
 
   const time = message.created_at
@@ -139,6 +142,12 @@ export default function MessageBubble({
 
   const handleCancelDelete = () => {
     setShowDeleteDialog(false)
+  }
+
+  const handleReaction = async (emoji) => {
+    if (!onReact) return
+    setShowReactionPicker(false)
+    await onReact(message, emoji)
   }
 
   // If the message is deleted for everyone, show placeholder
@@ -270,7 +279,12 @@ export default function MessageBubble({
         {/* Hover actions: react, reply, forward, edit, delete */}
         {!isEditing && (
           <div className="hidden group-hover:flex absolute -top-3 right-0 bg-surface-elevated border border-border rounded-lg shadow-popover px-1 py-0.5 gap-0.5">
-            <button className="icon-btn !p-1 text-xs" title="React" aria-label="React">😀</button>
+            <button
+              className="icon-btn !p-1 text-xs"
+              title="React"
+              aria-label="React"
+              onClick={() => setShowReactionPicker((visible) => !visible)}
+            >🙂</button>
             <button
               className="icon-btn !p-1 text-xs"
               title="Reply"
@@ -299,6 +313,38 @@ export default function MessageBubble({
             >
               🗑️
             </button>
+          </div>
+        )}
+
+        {showReactionPicker && (
+          <div className="absolute z-10 -top-12 right-0 flex gap-1 rounded-lg border border-border bg-surface-elevated p-1 shadow-popover">
+            {['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👎'].map((emoji) => (
+              <button
+                key={emoji}
+                className="rounded p-1 text-base hover:bg-surface-hover"
+                title={`React with ${emoji}`}
+                onClick={() => handleReaction(emoji)}
+              >{emoji}</button>
+            ))}
+          </div>
+        )}
+
+        {message.reactions?.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {message.reactions.map((reaction) => (
+              <button
+                key={reaction.emoji}
+                onClick={() => handleReaction(reaction.emoji)}
+                className={`rounded-full border px-1.5 py-0.5 text-[11px] ${
+                  reaction.reacted_by_me ? 'border-primary bg-primary/20' : 'border-border bg-surface-elevated'
+                }`}
+                title={`Reacted by ${reaction.users?.slice(0, 2).map((u) => u.name).join(', ')}${
+                  reaction.count > 2 ? ` and ${reaction.count - 2} others` : ''
+                }`}
+              >
+                {reaction.emoji} {reaction.count}
+              </button>
+            ))}
           </div>
         )}
 

@@ -120,6 +120,20 @@ def log_message_delete_rejected(
     )
 
 
+def log_reaction_event(
+    event: str, user_id: str, conversation_id: str, message_id: str, emoji: str
+) -> None:
+    """Log reaction security events without message contents or credentials."""
+    logger.info(
+        "%s | user=%s conversation=%s message=%s emoji=%s",
+        event,
+        _safe_id(user_id),
+        _safe_id(conversation_id),
+        _safe_id(message_id),
+        emoji[:32],
+    )
+
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:
