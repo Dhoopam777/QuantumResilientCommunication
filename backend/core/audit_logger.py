@@ -166,6 +166,15 @@ def log_group_event(
     )
 
 
+def log_email_verification_event(event: str, user_id: str, reason: str | None = None) -> None:
+    """Log verification lifecycle events without email contents or tokens."""
+    logger.info(
+        "%s | user=%s%s",
+        event,
+        _safe_id(user_id),
+        f" reason={reason[:80]}" if reason else "",
+    )
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:

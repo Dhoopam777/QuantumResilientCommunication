@@ -26,6 +26,7 @@ class RateLimiter:
         max_reactions_per_minute: int = settings.MESSAGE_REACTION_RATE_LIMIT,
         max_requests_per_day: int = settings.CONVERSATION_REQUESTS_PER_DAY,
         max_group_actions_per_minute: int = settings.GROUP_ACTION_RATE_LIMIT,
+        max_verification_resends_per_hour: int = settings.EMAIL_VERIFICATION_RESEND_RATE_LIMIT,
     ):
         self.max_uploads_per_minute = max_uploads_per_minute
         self.max_concurrent = max_concurrent
@@ -34,6 +35,7 @@ class RateLimiter:
         self.max_reactions_per_minute = max_reactions_per_minute
         self.max_requests_per_day = max_requests_per_day
         self.max_group_actions_per_minute = max_group_actions_per_minute
+        self.max_verification_resends_per_hour = max_verification_resends_per_hour
         self._upload_times: dict[str, list[float]] = defaultdict(list)
         self._concurrent: dict[str, int] = defaultdict(int)
         self._edit_times: dict[str, list[float]] = defaultdict(list)
@@ -41,6 +43,7 @@ class RateLimiter:
         self._reaction_times: dict[str, list[float]] = defaultdict(list)
         self._request_times: dict[str, list[float]] = defaultdict(list)
         self._group_action_times: dict[str, list[float]] = defaultdict(list)
+        self._verification_resend_times: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
 
     def _cleanup_old(self, user_id: str, now: float) -> None:
@@ -190,6 +193,22 @@ class RateLimiter:
                     headers={"Retry-After": "60"},
                 )
             self._group_action_times[user_id].append(now)
+
+    def check_verification_resend_rate(self, user_id: str) -> None:
+        from fastapi import HTTPException, status
+
+        with self._lock:
+            now = time.time()
+            self._verification_resend_times[user_id] = [
+                t for t in self._verification_resend_times[user_id] if now - t < 3600.0
+            ]
+            if len(self._verification_resend_times[user_id]) >= self.max_verification_resends_per_hour:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Verification resend limit exceeded",
+                    headers={"Retry-After": "3600"},
+                )
+            self._verification_resend_times[user_id].append(now)
 
     def release_concurrent(self, user_id: str) -> None:
         """Release a concurrent upload slot."""

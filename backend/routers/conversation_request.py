@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from core.audit_logger import log_conversation_request_event
-from core.dependencies import get_current_user
+from core.dependencies import require_verified_user
 from core.rate_limiter import rate_limiter
 from database.database import get_db
 from managers.connection_manager import connection_manager
@@ -47,7 +47,7 @@ def _response(request) -> ConversationRequestResponse:
 @users_router.get("/search")
 def search_users(
     q: str = Query(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> list[RequestUser]:
     users = (
@@ -63,7 +63,7 @@ def search_users(
 @router.post("", response_model=ConversationRequestResponse, status_code=status.HTTP_201_CREATED)
 async def send_request(
     payload: ConversationRequestCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     rate_limiter.check_conversation_request_rate(str(current_user.id))
@@ -81,12 +81,12 @@ async def send_request(
 
 
 @router.get("/incoming", response_model=list[ConversationRequestResponse])
-def incoming(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def incoming(current_user: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     return [_response(request) for request in list_requests(db, current_user.id, True)]
 
 
 @router.get("/outgoing", response_model=list[ConversationRequestResponse])
-def outgoing(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def outgoing(current_user: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     return [_response(request) for request in list_requests(db, current_user.id, False)]
 
 
@@ -123,15 +123,15 @@ async def _transition(request_id: uuid.UUID, action: str, current_user: User, db
 
 
 @router.post("/{request_id}/accept", response_model=ConversationRequestResponse)
-async def accept_request(request_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def accept_request(request_id: uuid.UUID, current_user: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     return await _transition(request_id, "accept", current_user, db)
 
 
 @router.post("/{request_id}/decline", response_model=ConversationRequestResponse)
-async def decline_request(request_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def decline_request(request_id: uuid.UUID, current_user: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     return await _transition(request_id, "decline", current_user, db)
 
 
 @router.delete("/{request_id}", response_model=ConversationRequestResponse)
-async def cancel_request(request_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def cancel_request(request_id: uuid.UUID, current_user: User = Depends(require_verified_user), db: Session = Depends(get_db)):
     return await _transition(request_id, "cancel", current_user, db)

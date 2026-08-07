@@ -20,7 +20,7 @@ from services.message_service import (
     delete_message,
     get_conversation_messages,
 )
-from core.dependencies import get_current_user
+from core.dependencies import require_verified_user
 from core.websocket_events import WS_EVENT_NEW_MESSAGE, WS_EVENT_MESSAGE_EDITED, WS_EVENT_MESSAGE_DELETED
 from core.websocket_events import WS_EVENT_REACTION_ADDED, WS_EVENT_REACTION_REMOVED
 from core.audit_logger import (
@@ -132,7 +132,7 @@ def _serialize_message(
 )
 async def send_message_endpoint(
     message_create: MessageCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     """
@@ -222,7 +222,7 @@ async def send_message_endpoint(
 async def edit_message_endpoint(
     message_id: uuid.UUID,
     message_edit: MessageEdit,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     """
@@ -345,7 +345,7 @@ async def edit_message_endpoint(
 async def delete_message_endpoint(
     message_id: uuid.UUID,
     message_delete: MessageDelete,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     """
@@ -469,7 +469,7 @@ def get_conversation_messages_endpoint(
     conversation_id: uuid.UUID,
     limit: int = Query(default=50, ge=1, le=100, description="Number of messages to return (1-100)"),
     offset: int = Query(default=0, ge=0, description="Number of messages to skip"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> list[MessageResponse]:
     """
@@ -537,7 +537,7 @@ async def _broadcast_reaction(
 async def toggle_reaction_endpoint(
     message_id: uuid.UUID,
     reaction: ReactionCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     rate_limiter.check_reaction_rate(str(current_user.id))
@@ -568,7 +568,7 @@ async def toggle_reaction_endpoint(
 async def remove_reaction_endpoint(
     message_id: uuid.UUID,
     reaction: ReactionCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     rate_limiter.check_reaction_rate(str(current_user.id))

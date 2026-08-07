@@ -84,6 +84,25 @@ class User(Base, TimestampMixin):
         comment="Email verification status"
     )
 
+    is_email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Whether the account email address has been verified"
+    )
+
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    verification_token_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+
+    verification_token_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     display_name: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,

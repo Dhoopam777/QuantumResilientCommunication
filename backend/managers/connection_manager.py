@@ -185,6 +185,10 @@ class ConnectionManager:
             logger.warning("WebSocket auth failed: inactive user (id=%s)", user_id_str)
             return None
 
+        if not (user.is_email_verified or user.is_verified):
+            logger.warning("WebSocket auth failed: email not verified (id=%s)", user_id_str)
+            return None
+
         # Mark the connection as authenticated
         info = self.active_connections.get(websocket)
         if info is not None:

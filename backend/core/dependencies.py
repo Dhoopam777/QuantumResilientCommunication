@@ -99,3 +99,15 @@ def get_current_user(
         )
 
     return user
+
+
+def require_verified_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Require email ownership for platform-mutating features."""
+    if not (current_user.is_email_verified or current_user.is_verified):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required",
+        )
+    return current_user

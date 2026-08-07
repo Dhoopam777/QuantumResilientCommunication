@@ -99,7 +99,8 @@ class UserService:
             full_name=user_create.full_name,
             profile_picture_url=user_create.profile_picture_url,
             is_active=user_create.is_active,
-            is_verified=user_create.is_verified,
+            is_verified=False,
+            is_email_verified=False,
         )
         
         # Add to database

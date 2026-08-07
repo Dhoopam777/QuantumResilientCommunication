@@ -24,7 +24,7 @@ from services.conversation_service import (
     get_conversation_participants,
     get_last_message,
 )
-from core.dependencies import get_current_user
+from core.dependencies import require_verified_user
 from models.user import User
 
 
@@ -91,7 +91,7 @@ router = APIRouter(
 )
 def create_conversation_endpoint(
     conversation_create: ConversationCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> ConversationResponse:
     """
@@ -133,7 +133,7 @@ def create_conversation_endpoint(
     },
 )
 def get_conversations(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> list[ConversationResponse]:
     """
@@ -168,7 +168,7 @@ def get_conversations(
 )
 def get_conversation(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> ConversationResponse:
     """

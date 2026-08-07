@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     MESSAGE_REACTION_RATE_LIMIT: int = 60  # reaction mutations per minute per user
     CONVERSATION_REQUESTS_PER_DAY: int = 20
     GROUP_ACTION_RATE_LIMIT: int = 60
+    EMAIL_VERIFICATION_RESEND_RATE_LIMIT: int = 5
+    FRONTEND_URL: str = "http://localhost:5173"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@example.com"
+    SMTP_USE_TLS: bool = True
 
 
 # Create a singleton settings instance

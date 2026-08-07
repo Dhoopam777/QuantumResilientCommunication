@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from core.audit_logger import log_group_event
-from core.dependencies import get_current_user
+from core.dependencies import require_verified_user
 from core.rate_limiter import rate_limiter
 from core.websocket_events import (
     WS_EVENT_GROUP_CREATED,
@@ -39,7 +39,7 @@ def _action_error(
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
 async def create_group_endpoint(
     payload: GroupCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     rate_limiter.check_group_action_rate(str(current_user.id))
@@ -61,7 +61,7 @@ async def create_group_endpoint(
 @router.get("/{group_id}", response_model=ConversationResponse)
 def get_group_endpoint(
     group_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     try:
@@ -77,7 +77,7 @@ def get_group_endpoint(
 async def update_group_endpoint(
     group_id: uuid.UUID,
     payload: GroupUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     rate_limiter.check_group_action_rate(str(current_user.id))
@@ -105,7 +105,7 @@ async def update_group_endpoint(
 async def add_group_member_endpoint(
     group_id: uuid.UUID,
     payload: GroupMemberAdd,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     rate_limiter.check_group_action_rate(str(current_user.id))
@@ -134,7 +134,7 @@ async def add_group_member_endpoint(
 async def remove_group_member_endpoint(
     group_id: uuid.UUID,
     username: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ):
     rate_limiter.check_group_action_rate(str(current_user.id))

@@ -4,7 +4,7 @@ Authentication Router for Quantum-Resilient Communication System
 This module provides user registration, login, token refresh, and protected endpoints.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -20,6 +20,9 @@ from schemas.user import (
     TokenRefreshResponse,
 )
 from services.user_service import create_user, authenticate_user, update_profile
+from services.email_verification_service import issue_verification, verify_token
+from core.audit_logger import log_email_verification_event
+from core.rate_limiter import rate_limiter
 from core.security import create_access_token, create_refresh_token, decode_token
 from core.dependencies import get_current_user
 from models.user import User
@@ -57,6 +60,8 @@ def register(user_create: UserCreate, db: Session = Depends(get_db)) -> UserResp
     """
     try:
         user = create_user(db=db, user_create=user_create)
+        issue_verification(db, user)
+        log_email_verification_event("EMAIL_VERIFICATION_SENT", str(user.id))
         return UserResponse.model_validate(user)
     except ValueError as e:
         raise HTTPException(
@@ -246,3 +251,27 @@ def update_me(
             detail=str(e),
         )
     return UserResponse.model_validate(user)
+
+
+@router.get("/verify-email", response_model=UserResponse)
+def verify_email(token: str = Query(min_length=1, max_length=128), db: Session = Depends(get_db)):
+    try:
+        user = verify_token(db, token)
+    except ValueError as exc:
+        log_email_verification_event("EMAIL_VERIFICATION_FAILED", "unknown", str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
+    log_email_verification_event("EMAIL_VERIFIED", str(user.id))
+    return UserResponse.model_validate(user)
+
+
+@router.post("/resend-verification", response_model=UserResponse)
+def resend_verification(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rate_limiter.check_verification_resend_rate(str(current_user.id))
+    log_email_verification_event("RESEND_REQUESTED", str(current_user.id))
+    if not (current_user.is_email_verified or current_user.is_verified):
+        issue_verification(db, current_user)
+        log_email_verification_event("EMAIL_VERIFICATION_SENT", str(current_user.id))
+    return UserResponse.model_validate(current_user)

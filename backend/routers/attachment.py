@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from core.dependencies import get_current_user
+from core.dependencies import require_verified_user
 from models.user import User
 from schemas.attachment import AttachmentResponse, AttachmentUploadResponse
 from services.attachment_service import (
@@ -55,7 +55,7 @@ router = APIRouter(
 async def upload_attachment(
     conversation_id: uuid.UUID = Form(..., description="Conversation ID"),
     file: UploadFile = File(..., description="File to upload"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> AttachmentUploadResponse:
     """
@@ -101,7 +101,7 @@ async def upload_attachment(
 )
 def get_attachment_metadata(
     attachment_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> AttachmentResponse:
     """Get attachment metadata (no file content)."""
@@ -127,7 +127,7 @@ def get_attachment_metadata(
 )
 def download_attachment(
     attachment_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """
@@ -184,7 +184,7 @@ def download_attachment(
 )
 def download_thumbnail(
     attachment_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """
@@ -240,7 +240,7 @@ def download_thumbnail(
 )
 def delete_attachment(
     attachment_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> Response:
     """
