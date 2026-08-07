@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from services.message_service import (
     MessageService,
     send_message,
+    edit_message,
     get_message_by_id,
     get_conversation_messages,
 )
@@ -348,7 +349,7 @@ class TestReplySystem:
         Test that a message cannot reply to itself.
         
         Verifies:
-        - ValueError is raised
+        - ValueError is raised when a message's reply chain creates a cycle
         """
         # Create a message
         msg = send_message(
@@ -360,7 +361,12 @@ class TestReplySystem:
             message_type="text",
         )
 
-        # Try to reply to itself (simulate by using its own ID)
+        # Simulate a self-referential reply: set msg.reply_to_message_id to itself
+        msg.reply_to_message_id = msg.id
+        db_session.add(msg)
+        db_session.commit()
+
+        # Try to reply to msg — this creates a cycle (msg replies to itself)
         with pytest.raises(ValueError):
             send_message(
                 db=db_session,
@@ -371,6 +377,368 @@ class TestReplySystem:
                 message_type="text",
                 reply_to_message_id=msg.id,
             )
+
+
+class TestEditMessage:
+    """Tests for edit_message()"""
+
+    def test_edit_own_message_success(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that a user can edit their own message.
+
+        Verifies:
+        - Message content is updated
+        - is_edited is set to True
+        - edited_at is set
+        - content_hash is updated
+        """
+        # Create a message
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="original_content",
+            content_hash="original_hash",
+            message_type="text",
+        )
+
+        # Edit the message
+        updated = edit_message(
+            db=db_session,
+            message_id=msg.id,
+            user_id=test_user.id,
+            content_encrypted="edited_content",
+            content_hash="edited_hash",
+        )
+
+        assert updated is not None
+        assert updated.id == msg.id
+        assert updated.content_encrypted == "edited_content"
+        assert updated.content_hash == "edited_hash"
+        assert updated.is_edited is True
+        assert updated.edited_at is not None
+        assert updated.conversation_id == test_conversation.id
+        assert updated.sender_id == test_user.id
+
+    def test_edit_own_message_keeps_attachments_reply(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that editing preserves attachments, replies, and other fields.
+
+        Verifies:
+        - reply_to_message_id is preserved
+        - message_type is preserved
+        - is_deleted is preserved
+        """
+        # Create a parent message
+        parent = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="parent_content",
+            content_hash="parent_hash",
+            message_type="text",
+        )
+
+        # Create a reply message
+        reply = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="reply_content",
+            content_hash="reply_hash",
+            message_type="text",
+            reply_to_message_id=parent.id,
+        )
+
+        # Edit the reply
+        updated = edit_message(
+            db=db_session,
+            message_id=reply.id,
+            user_id=test_user.id,
+            content_encrypted="edited_reply",
+            content_hash="edited_reply_hash",
+        )
+
+        assert updated.reply_to_message_id == parent.id
+        assert updated.message_type == "text"
+        assert updated.is_deleted is False
+
+    def test_cannot_edit_others_message(self, db_session: Session, test_conversation, test_user, test_user2):
+        """
+        Test that a user cannot edit another user's message.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates ownership
+        """
+        # test_user sends a message
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="user1_content",
+            content_hash="user1_hash",
+            message_type="text",
+        )
+
+        # test_user2 tries to edit it
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user2.id,
+                content_encrypted="hacked_content",
+                content_hash="hacked_hash",
+            )
+
+        assert "own messages" in str(exc_info.value).lower()
+
+    def test_cannot_edit_deleted_message(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that a deleted message cannot be edited.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates deleted
+        """
+        # Create a message
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="to_delete",
+            content_hash="hash_del",
+            message_type="text",
+        )
+
+        # Soft delete the message
+        msg.is_deleted = True
+        db_session.add(msg)
+        db_session.commit()
+
+        # Try to edit the deleted message
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user.id,
+                content_encrypted="edited_deleted",
+                content_hash="edited_hash",
+            )
+
+        assert "deleted" in str(exc_info.value).lower()
+
+    def test_cannot_edit_system_message(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that a system message cannot be edited.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates system
+        """
+        # Create a system message
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="system_content",
+            content_hash="system_hash",
+            message_type="system",
+        )
+
+        # Try to edit the system message
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user.id,
+                content_encrypted="edited_system",
+                content_hash="edited_hash",
+            )
+
+        assert "system" in str(exc_info.value).lower()
+
+    def test_cannot_edit_nonexistent_message(self, db_session: Session, test_user):
+        """
+        Test that a non-existent message cannot be edited.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates not found
+        """
+        fake_id = uuid.uuid4()
+
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=fake_id,
+                user_id=test_user.id,
+                content_encrypted="content",
+                content_hash="hash",
+            )
+
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_cannot_edit_cross_conversation(self, db_session: Session, test_conversation, test_user, test_user2):
+        """
+        Test that a user cannot edit a message in a conversation they're not part of.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates participant
+        """
+        # Create a second conversation with only test_user2
+        conv2 = Conversation(
+            is_group=False,
+            group_name=None,
+            created_by=test_user2.id,
+            is_encrypted=True,
+        )
+        db_session.add(conv2)
+        db_session.flush()
+
+        p1 = ConversationParticipant(
+            conversation_id=conv2.id,
+            user_id=test_user2.id,
+            role="admin",
+        )
+        db_session.add(p1)
+        db_session.commit()
+
+        # test_user2 sends a message in conv2
+        msg_in_conv2 = send_message(
+            db=db_session,
+            conversation_id=conv2.id,
+            sender_id=test_user2.id,
+            content_encrypted="conv2_content",
+            content_hash="conv2_hash",
+            message_type="text",
+        )
+
+        # test_user is not a participant in conv2, tries to edit
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg_in_conv2.id,
+                user_id=test_user.id,
+                content_encrypted="cross_edit",
+                content_hash="cross_hash",
+            )
+
+        assert "participant" in str(exc_info.value).lower() or "own" in str(exc_info.value).lower()
+
+    def test_empty_content_rejected(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that empty content is rejected.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates content cannot be empty
+        """
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="original",
+            content_hash="hash",
+            message_type="text",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user.id,
+                content_encrypted="",
+                content_hash="new_hash",
+            )
+
+        assert "content" in str(exc_info.value).lower() and "empty" in str(exc_info.value).lower()
+
+    def test_whitespace_only_content_rejected(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that whitespace-only content is rejected.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates content cannot be empty
+        """
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="original",
+            content_hash="hash",
+            message_type="text",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user.id,
+                content_encrypted="   \n\t  ",
+                content_hash="new_hash",
+            )
+
+        assert "content" in str(exc_info.value).lower() and "empty" in str(exc_info.value).lower()
+
+    def test_empty_hash_rejected(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that empty content hash is rejected.
+
+        Verifies:
+        - ValueError is raised
+        - Error message indicates hash cannot be empty
+        """
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="original",
+            content_hash="hash",
+            message_type="text",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            edit_message(
+                db=db_session,
+                message_id=msg.id,
+                user_id=test_user.id,
+                content_encrypted="new_content",
+                content_hash="",
+            )
+
+        assert "hash" in str(exc_info.value).lower() and "empty" in str(exc_info.value).lower()
+
+    def test_edit_updates_conversation_updated_at(self, db_session: Session, test_conversation, test_user):
+        """
+        Test that conversation.updated_at is updated after editing.
+
+        Verifies:
+        - Conversation's updated_at is refreshed
+        """
+        msg = send_message(
+            db=db_session,
+            conversation_id=test_conversation.id,
+            sender_id=test_user.id,
+            content_encrypted="original",
+            content_hash="hash",
+            message_type="text",
+        )
+
+        original_updated_at = test_conversation.updated_at
+
+        edit_message(
+            db=db_session,
+            message_id=msg.id,
+            user_id=test_user.id,
+            content_encrypted="edited",
+            content_hash="edited_hash",
+        )
+
+        db_session.refresh(test_conversation)
+        assert test_conversation.updated_at >= original_updated_at
 
 
 class TestGetMessageById:

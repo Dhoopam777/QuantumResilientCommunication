@@ -82,6 +82,24 @@ def log_reply_rejected(user_id: str, conversation_id: str, reason: str) -> None:
     )
 
 
+def log_message_edited(user_id: str, message_id: str, conversation_id: str) -> None:
+    """Log a successful message edit. Never logs message contents."""
+    logger.info(
+        "MESSAGE_EDITED | user=%s message=%s conversation=%s",
+        _safe_id(user_id), _safe_id(message_id), _safe_id(conversation_id),
+    )
+
+
+def log_message_edit_rejected(
+    user_id: str, message_id: str, conversation_id: str, reason: str
+) -> None:
+    """Log a rejected message edit. Never logs message contents."""
+    logger.warning(
+        "MESSAGE_EDIT_REJECTED | user=%s message=%s conversation=%s reason=%s",
+        _safe_id(user_id), _safe_id(message_id), _safe_id(conversation_id), reason,
+    )
+
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:

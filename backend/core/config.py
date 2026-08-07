@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     ATTACHMENT_THUMBNAIL_WIDTH: int = 200
     ATTACHMENT_THUMBNAIL_HEIGHT: int = 200
 
+    # Message Edit Security
+    MESSAGE_EDIT_RATE_LIMIT: int = 30  # edits per minute per user
+
 
 # Create a singleton settings instance
 settings = Settings()

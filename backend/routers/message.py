@@ -10,14 +10,21 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from schemas.message import MessageCreate, MessageResponse, ReplyPreview
+from schemas.message import MessageCreate, MessageEdit, MessageResponse, ReplyPreview
 from services.message_service import (
     send_message,
+    edit_message,
     get_conversation_messages,
 )
 from core.dependencies import get_current_user
-from core.websocket_events import WS_EVENT_NEW_MESSAGE
-from core.audit_logger import log_reply_created, log_reply_rejected
+from core.websocket_events import WS_EVENT_NEW_MESSAGE, WS_EVENT_MESSAGE_EDITED
+from core.audit_logger import (
+    log_reply_created,
+    log_reply_rejected,
+    log_message_edited,
+    log_message_edit_rejected,
+)
+from core.rate_limiter import rate_limiter
 from managers.connection_manager import connection_manager
 from models.user import User
 from models.message import Message
@@ -152,6 +159,129 @@ async def send_message_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+
+
+@router.put(
+    "/{message_id}",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Edit a message",
+    description="Edit the text content of a message. Only the sender can edit their own message.",
+    responses={
+        200: {"description": "Message edited successfully"},
+        400: {"description": "Invalid edit data"},
+        401: {"description": "Unauthorized - invalid or missing token"},
+        403: {"description": "Forbidden - not the message owner or not a participant"},
+        404: {"description": "Message not found"},
+        429: {"description": "Rate limit exceeded"},
+    },
+)
+async def edit_message_endpoint(
+    message_id: uuid.UUID,
+    message_edit: MessageEdit,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """
+    Edit a message's text content.
+
+    Security model:
+    - JWT authentication via get_current_user
+    - Ownership verification: only the sender can edit their own message
+    - Conversation authorization: user must be an active participant
+    - IDOR prevention: message ID is a UUID, ownership checked server-side
+    - Never leaks whether a message exists (404 for non-existent, 403 for unauthorized)
+
+    After the edit is committed, a `message_edited` WebSocket event is broadcast
+    to all authorized conversation participants so clients update in-place.
+
+    Args:
+        message_id: UUID of the message to edit
+        message_edit: New content and hash
+        current_user: Authenticated user from the dependency
+        db: Database session dependency
+
+    Returns:
+        MessageResponse: Updated message data
+
+    Raises:
+        HTTPException 400: If edit data is invalid
+        HTTPException 401: If user is not authenticated
+        HTTPException 403: If user is not the owner or not a participant
+        HTTPException 404: If message does not exist
+        HTTPException 429: If rate limit exceeded
+    """
+    # Rate limiting — prevent edit abuse
+    try:
+        rate_limiter.check_edit_rate(str(current_user.id))
+    except HTTPException:
+        log_message_edit_rejected(
+            str(current_user.id), str(message_id), "unknown", "rate_limited"
+        )
+        raise
+
+    # Load the message to determine conversation_id for audit/broadcast
+    message = db.query(Message).filter(Message.id == message_id).first()
+    if message is None:
+        # Never leak whether a message exists — return generic 404
+        log_message_edit_rejected(
+            str(current_user.id), str(message_id), "unknown", "not_found"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found",
+        )
+
+    conversation_id = message.conversation_id
+
+    try:
+        updated = edit_message(
+            db=db,
+            message_id=message_id,
+            user_id=current_user.id,
+            content_encrypted=message_edit.content_encrypted,
+            content_hash=message_edit.content_hash,
+        )
+
+        # Audit log successful edit
+        log_message_edited(
+            str(current_user.id),
+            str(updated.id),
+            str(updated.conversation_id),
+        )
+
+        # Build the response with reply preview
+        response = _serialize_message(db, updated)
+
+        # Broadcast the edited message to all connected WebSocket participants
+        message_data = response.model_dump(mode="json")
+        await connection_manager.broadcast_to_conversation(
+            updated.conversation_id,
+            {"type": WS_EVENT_MESSAGE_EDITED, "message": message_data},
+        )
+
+        return response
+    except ValueError as e:
+        # Audit log rejected edit
+        log_message_edit_rejected(
+            str(current_user.id),
+            str(message_id),
+            str(conversation_id),
+            str(e),
+        )
+
+        error_detail = str(e)
+        # Ownership / authorization failures → 403
+        if "own messages" in error_detail or "participant" in error_detail:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_detail,
+            )
+        # Deleted / system / validation failures → 400
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_detail,
         )
 
 

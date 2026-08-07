@@ -58,10 +58,12 @@ class MessageService:
         if parent.conversation_id != conversation_id:
             raise ValueError("Cannot reply to a message in a different conversation")
 
-        # Prevent circular references: the parent must not reply to the new message
-        # (which doesn't exist yet, but check the parent's own reply chain)
-        # A message cannot reply to itself
-        if parent.id == reply_to_message_id:
+        # Prevent circular references: the parent must not reply to the new message.
+        # Since the new message doesn't exist yet, we check the parent's reply chain
+        # to ensure it doesn't create a cycle. A message cannot reply to itself.
+        # Note: parent.id == reply_to_message_id is always true here (parent was
+        # loaded by that ID), so we check the parent's own reply chain instead.
+        if parent.reply_to_message_id == reply_to_message_id:
             raise ValueError("Cannot reply to a message with itself")
 
     @staticmethod
@@ -137,6 +139,93 @@ class MessageService:
 
         # Update conversation's updated_at timestamp
         conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if conversation:
+            conversation.updated_at = datetime.now(timezone.utc)
+
+        # Commit the transaction
+        try:
+            db.commit()
+            db.refresh(message)
+            return message
+        except Exception:
+            db.rollback()
+            raise
+
+    @staticmethod
+    def edit_message(
+        db: Session,
+        message_id: uuid.UUID,
+        user_id: uuid.UUID,
+        content_encrypted: str,
+        content_hash: str,
+    ) -> Message:
+        """
+        Edit a message's text content.
+
+        Security model:
+        - Only the message owner (sender) can edit their own message.
+        - The user must be an active participant in the message's conversation.
+        - Deleted messages cannot be edited.
+        - System messages cannot be edited.
+        - Only text content is updated — attachments, replies, and reactions
+          are never modified by an edit.
+
+        Args:
+            db: Database session
+            message_id: UUID of the message to edit
+            user_id: UUID of the user attempting the edit
+            content_encrypted: New encrypted message content
+            content_hash: New SHA-256 hash for integrity verification
+
+        Returns:
+            Message: The updated message object
+
+        Raises:
+            ValueError: If:
+                - Message does not exist
+                - Message is deleted
+                - Message is a system message
+                - User is not the message owner
+                - User is not an active participant in the conversation
+                - content_encrypted is empty or whitespace-only
+                - content_hash is empty
+        """
+        # Validate inputs
+        if not content_encrypted or not content_encrypted.strip():
+            raise ValueError("Message content cannot be empty")
+
+        if not content_hash or not content_hash.strip():
+            raise ValueError("Content hash cannot be empty")
+
+        # Load the message
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if message is None:
+            raise ValueError("Message not found")
+
+        # Reject editing deleted messages
+        if message.is_deleted:
+            raise ValueError("Cannot edit a deleted message")
+
+        # Reject editing system messages
+        if message.message_type == "system":
+            raise ValueError("Cannot edit a system message")
+
+        # Ownership verification — only the sender can edit their own message
+        if message.sender_id != user_id:
+            raise ValueError("You can only edit your own messages")
+
+        # Conversation authorization — user must be an active participant
+        if not is_participant(db, message.conversation_id, user_id):
+            raise ValueError("User is not a participant in this conversation")
+
+        # Update only the text content fields
+        message.content_encrypted = content_encrypted
+        message.content_hash = content_hash
+        message.is_edited = True
+        message.edited_at = datetime.now(timezone.utc)
+
+        # Update conversation's updated_at timestamp
+        conversation = db.query(Conversation).filter(Conversation.id == message.conversation_id).first()
         if conversation:
             conversation.updated_at = datetime.now(timezone.utc)
 
@@ -241,6 +330,23 @@ def send_message(
         message_type=message_type,
         reply_to=reply_to,
         reply_to_message_id=reply_to_message_id,
+    )
+
+
+def edit_message(
+    db: Session,
+    message_id: uuid.UUID,
+    user_id: uuid.UUID,
+    content_encrypted: str,
+    content_hash: str,
+) -> Message:
+    """Convenience function to edit a message."""
+    return MessageService.edit_message(
+        db=db,
+        message_id=message_id,
+        user_id=user_id,
+        content_encrypted=content_encrypted,
+        content_hash=content_hash,
     )
 
 

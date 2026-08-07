@@ -1,7 +1,37 @@
-export default function MessageBubble({ message, isOutgoing, onReply, onScrollToMessage }) {
+import { useState, useRef, useEffect } from 'react'
+
+export default function MessageBubble({
+  message,
+  isOutgoing,
+  onReply,
+  onScrollToMessage,
+  onEdit,
+  isEditing,
+  onStartEdit,
+  onCancelEdit,
+}) {
+  const [editContent, setEditContent] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [editError, setEditError] = useState(null)
+  const editInputRef = useRef(null)
+
   const time = message.created_at
     ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : ''
+
+  const editedTime = message.edited_at
+    ? new Date(message.edited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : ''
+
+  // Initialize edit content when editing starts
+  useEffect(() => {
+    if (isEditing) {
+      setEditContent(message.content_encrypted || '')
+      setEditError(null)
+      // Focus the textarea after render
+      setTimeout(() => editInputRef.current?.focus(), 0)
+    }
+  }, [isEditing, message.id, message.content_encrypted])
 
   const handleReplyClick = () => {
     if (onReply) onReply(message)
@@ -10,6 +40,43 @@ export default function MessageBubble({ message, isOutgoing, onReply, onScrollTo
   const handleReplyPreviewClick = () => {
     if (onScrollToMessage && message.reply_preview) {
       onScrollToMessage(message.reply_preview.id)
+    }
+  }
+
+  const handleStartEdit = () => {
+    if (onStartEdit) onStartEdit(message)
+  }
+
+  const handleCancelEdit = () => {
+    if (onCancelEdit) onCancelEdit(message)
+  }
+
+  const handleSaveEdit = async () => {
+    const trimmed = editContent.trim()
+    if (!trimmed || isSaving) return
+    if (trimmed === message.content_encrypted) {
+      // No change — just cancel
+      handleCancelEdit()
+      return
+    }
+    setIsSaving(true)
+    setEditError(null)
+    try {
+      await onEdit(message, trimmed)
+      // onEdit handles closing the edit mode on success
+    } catch (err) {
+      setEditError(err?.message || 'Failed to save edit')
+      setIsSaving(false)
+    }
+  }
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSaveEdit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      handleCancelEdit()
     }
   }
 
@@ -47,27 +114,99 @@ export default function MessageBubble({ message, isOutgoing, onReply, onScrollTo
             [{message.message_type}]
           </div>
         )}
-        <div className="break-words">{message.content_encrypted}</div>
-        <div className={`flex items-center gap-1 mt-1 text-[10px] ${isOutgoing ? 'text-white/70' : 'text-text-muted'}`}>
-          <span>{time}</span>
-          {message.is_edited && <span>• edited</span>}
-          {isOutgoing && <span>• ✓</span>}
-        </div>
 
-        {/* Hover actions: reply, forward, delete, react */}
-        <div className="hidden group-hover:flex absolute -top-3 right-0 bg-surface-elevated border border-border rounded-lg shadow-popover px-1 py-0.5 gap-0.5">
-          <button className="icon-btn !p-1 text-xs" title="React" aria-label="React">😀</button>
-          <button
-            className="icon-btn !p-1 text-xs"
-            title="Reply"
-            aria-label="Reply"
-            onClick={handleReplyClick}
-          >
-            ↩️
-          </button>
-          <button className="icon-btn !p-1 text-xs" title="Forward" aria-label="Forward">➡️</button>
-          <button className="icon-btn !p-1 text-xs" title="Delete" aria-label="Delete">🗑️</button>
-        </div>
+        {/* Edit mode */}
+        {isEditing ? (
+          <div className="flex flex-col gap-1">
+            <textarea
+              ref={editInputRef}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              className={`input-base w-full resize-none text-sm ${
+                isOutgoing ? 'bg-white/10 text-white placeholder-white/50' : 'bg-surface-elevated text-text-primary'
+              }`}
+              rows={2}
+              disabled={isSaving}
+              aria-label="Edit message"
+            />
+            {editError && (
+              <div className="text-xs text-red-400">{editError}</div>
+            )}
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                onClick={handleSaveEdit}
+                disabled={!editContent.trim() || isSaving}
+                className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  isOutgoing
+                    ? 'bg-white/20 text-white hover:bg-white/30 disabled:opacity-50'
+                    : 'bg-primary text-white hover:bg-primary-dark disabled:opacity-50'
+                }`}
+                aria-label="Save edit"
+              >
+                {isSaving ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="animate-spin inline-block w-3 h-3 border-2 border-white/50 border-t-white rounded-full" />
+                    Saving...
+                  </span>
+                ) : (
+                  'Save'
+                )}
+              </button>
+              <button
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+                className={`px-2 py-0.5 rounded text-xs ${
+                  isOutgoing ? 'text-white/70 hover:text-white' : 'text-text-muted hover:text-text-primary'
+                }`}
+                aria-label="Cancel edit"
+              >
+                Cancel
+              </button>
+              <span className={`text-[10px] ${isOutgoing ? 'text-white/50' : 'text-text-muted'}`}>
+                Enter to save · Esc to cancel
+              </span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="break-words">{message.content_encrypted}</div>
+            <div className={`flex items-center gap-1 mt-1 text-[10px] ${isOutgoing ? 'text-white/70' : 'text-text-muted'}`}>
+              <span>{time}</span>
+              {message.is_edited && (
+                <span title={editedTime ? `Edited at ${editedTime}` : 'Edited'}>• Edited</span>
+              )}
+              {isOutgoing && <span>• ✓</span>}
+            </div>
+          </>
+        )}
+
+        {/* Hover actions: react, reply, forward, edit, delete */}
+        {!isEditing && (
+          <div className="hidden group-hover:flex absolute -top-3 right-0 bg-surface-elevated border border-border rounded-lg shadow-popover px-1 py-0.5 gap-0.5">
+            <button className="icon-btn !p-1 text-xs" title="React" aria-label="React">😀</button>
+            <button
+              className="icon-btn !p-1 text-xs"
+              title="Reply"
+              aria-label="Reply"
+              onClick={handleReplyClick}
+            >
+              ↩️
+            </button>
+            <button className="icon-btn !p-1 text-xs" title="Forward" aria-label="Forward">➡️</button>
+            {isOutgoing && message.message_type !== 'system' && (
+              <button
+                className="icon-btn !p-1 text-xs"
+                title="Edit"
+                aria-label="Edit message"
+                onClick={handleStartEdit}
+              >
+                ✏️
+              </button>
+            )}
+            <button className="icon-btn !p-1 text-xs" title="Delete" aria-label="Delete">🗑️</button>
+          </div>
+        )}
       </div>
     </div>
   )

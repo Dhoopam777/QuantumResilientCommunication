@@ -5,8 +5,9 @@ This module defines the Message SQLAlchemy model.
 """
 
 import uuid
+from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Boolean, UUID, Text, ForeignKey
+from sqlalchemy import String, Boolean, UUID, Text, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base import TimestampMixin
@@ -27,6 +28,7 @@ class Message(Base, TimestampMixin):
         reply_to: Parent message ID if this is a reply (legacy field)
         reply_to_message_id: Parent message FK (self-referential)
         is_edited: Whether the message has been edited
+        edited_at: Timestamp when the message was last edited (NULL if never edited)
         is_deleted: Soft delete flag
     """
 
@@ -92,6 +94,12 @@ class Message(Base, TimestampMixin):
         comment="Edit status"
     )
 
+    edited_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp when the message was last edited (NULL if never edited)"
+    )
+
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -126,7 +134,6 @@ class Message(Base, TimestampMixin):
 
     replies: Mapped[list["Message"]] = relationship(
         "Message",
-        remote_side="Message.id",
         foreign_keys=[reply_to_message_id],
         back_populates="reply_to_message",
         lazy="selectin",

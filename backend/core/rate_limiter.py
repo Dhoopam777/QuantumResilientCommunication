@@ -15,17 +15,20 @@ from core.config import settings
 
 
 class RateLimiter:
-    """In-memory rate limiter for attachment uploads."""
+    """In-memory rate limiter for attachment uploads and message edits."""
 
     def __init__(
         self,
         max_uploads_per_minute: int = settings.ATTACHMENT_UPLOAD_RATE_LIMIT,
         max_concurrent: int = settings.ATTACHMENT_MAX_CONCURRENT_UPLOADS,
+        max_edits_per_minute: int = settings.MESSAGE_EDIT_RATE_LIMIT,
     ):
         self.max_uploads_per_minute = max_uploads_per_minute
         self.max_concurrent = max_concurrent
+        self.max_edits_per_minute = max_edits_per_minute
         self._upload_times: dict[str, list[float]] = defaultdict(list)
         self._concurrent: dict[str, int] = defaultdict(int)
+        self._edit_times: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
 
     def _cleanup_old(self, user_id: str, now: float) -> None:
@@ -54,6 +57,33 @@ class RateLimiter:
                 )
 
             self._upload_times[user_id].append(now)
+
+    def _cleanup_old_edits(self, user_id: str, now: float) -> None:
+        """Remove edit timestamps older than 60 seconds."""
+        self._edit_times[user_id] = [
+            t for t in self._edit_times[user_id] if now - t < 60.0
+        ]
+
+    def check_edit_rate(self, user_id: str) -> None:
+        """
+        Check if user is within message edit rate limits.
+        Raises HTTPException 429 if exceeded.
+        """
+        from fastapi import HTTPException, status
+
+        with self._lock:
+            now = time.time()
+            self._cleanup_old_edits(user_id, now)
+
+            if len(self._edit_times[user_id]) >= self.max_edits_per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Message edit rate limit exceeded. Maximum {self.max_edits_per_minute} "
+                    f"edits per minute.",
+                    headers={"Retry-After": "60"},
+                )
+
+            self._edit_times[user_id].append(now)
 
     def check_concurrent(self, user_id: str) -> None:
         """

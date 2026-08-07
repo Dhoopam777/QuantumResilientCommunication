@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [wsMessages, setWsMessages] = useState([])
   const [search, setSearch] = useState('')
   const [replyTo, setReplyTo] = useState(null)
+  const [editingId, setEditingId] = useState(null)
   const wsClientRef = useRef(null)
   const seenMessageIdsRef = useRef(new Set())
   const wsTokenRef = useRef('')
@@ -89,6 +90,21 @@ export default function ChatPage() {
       }
     })
 
+    wsClient.on('message_edited', (data) => {
+      const msg = data.message
+      if (!msg || !msg.id) return
+      // Update the message in-place in the REST-fetched messages
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+      )
+      // Also update in wsMessages if present
+      setWsMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+      )
+      // If this message is currently being edited, close the edit mode
+      setEditingId((current) => (current === msg.id ? null : current))
+    })
+
     wsClient.on('auth_success', () => {
       setWsStatus('connected')
       wsClient.joinConversation(conversationId)
@@ -146,6 +162,36 @@ export default function ChatPage() {
     setReplyTo(null)
   }
 
+  const handleStartEdit = (message) => {
+    setEditingId(message.id)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+  }
+
+  const handleEditMessage = async (message, newContent) => {
+    if (!message || !message.id) return
+    const payload = {
+      content_encrypted: newContent,
+      content_hash: btoa(newContent).slice(0, 32),
+    }
+    const res = await messageApi.edit(message.id, payload)
+    if (res.status === 200 && res.data) {
+      // Update the message in-place locally
+      setMessages((prev) =>
+        prev.map((m) => (m.id === res.data.id ? { ...m, ...res.data } : m))
+      )
+      setWsMessages((prev) =>
+        prev.map((m) => (m.id === res.data.id ? { ...m, ...res.data } : m))
+      )
+      setEditingId(null)
+    } else {
+      const err = new Error(res.data?.detail || 'Failed to edit message')
+      throw err
+    }
+  }
+
   const handleSend = async (content, replyTarget = null) => {
     if (!conversationId || !content.trim()) return
     const payload = {
@@ -197,6 +243,10 @@ export default function ChatPage() {
             messages={allMessages}
             currentUserId={user?.id}
             onReply={handleReply}
+            onEdit={handleEditMessage}
+            editingId={editingId}
+            onStartEdit={handleStartEdit}
+            onCancelEdit={handleCancelEdit}
           />
           <MessageComposer
             onSend={handleSend}

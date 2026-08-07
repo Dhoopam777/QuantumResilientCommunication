@@ -24,14 +24,13 @@ from core.security import hash_password
 from core.config import Settings
 
 
-# Test database URL (SQLite in-memory for isolation)
-TEST_DATABASE_URL = "sqlite:///:memory:"
+# Test database URL (PostgreSQL for UUID support)
+TEST_DATABASE_URL = "postgresql://user:password@localhost:5432/quantum_resilient_test_db"
 
 # Create test engine
 test_engine = create_engine(
     TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+    pool_pre_ping=True,
 )
 
 # Create test session factory

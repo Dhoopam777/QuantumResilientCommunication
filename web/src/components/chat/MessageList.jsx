@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import MessageBubble from './MessageBubble'
 import EmptyState from '../common/EmptyState'
 
-export default function MessageList({ messages = [], currentUserId, onReply, onScrollToMessage }) {
+export default function MessageList({
+  messages = [],
+  currentUserId,
+  onReply,
+  onScrollToMessage,
+  onEdit,
+  editingId,
+  onStartEdit,
+  onCancelEdit,
+}) {
   const bottomRef = useRef(null)
   const messageRefs = useRef({})
   const [highlightedId, setHighlightedId] = useState(null)
@@ -61,6 +70,10 @@ export default function MessageList({ messages = [], currentUserId, onReply, onS
             isOutgoing={m.sender_id === currentUserId}
             onReply={onReply}
             onScrollToMessage={handleScrollToMessage}
+            onEdit={onEdit}
+            isEditing={editingId === m.id}
+            onStartEdit={onStartEdit}
+            onCancelEdit={onCancelEdit}
           />
         </div>
       ))}

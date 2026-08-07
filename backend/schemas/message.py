@@ -7,7 +7,7 @@ This module defines Pydantic schemas for Message validation and serialization.
 import uuid
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageCreate(BaseModel):
@@ -21,6 +21,28 @@ class MessageCreate(BaseModel):
     message_type: str = "text"
     reply_to: Optional[uuid.UUID] = None
     reply_to_message_id: Optional[uuid.UUID] = None
+
+
+class MessageEdit(BaseModel):
+    """
+    Schema for editing a message.
+
+    Only the encrypted content and its hash are editable.
+    Attachments, replies, and reactions are never modified by an edit.
+    """
+
+    content_encrypted: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="Encrypted message content (AES-256-GCM)",
+    )
+    content_hash: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="SHA-256 hash for integrity verification",
+    )
 
 
 class ReplyPreview(BaseModel):
@@ -56,6 +78,7 @@ class MessageResponse(BaseModel):
     reply_to_message_id: Optional[uuid.UUID] = None
     reply_preview: Optional[ReplyPreview] = None
     is_edited: bool
+    edited_at: Optional[datetime] = None
     is_deleted: bool
     created_at: datetime
     updated_at: datetime
