@@ -148,6 +148,24 @@ def log_conversation_request_event(
     )
 
 
+def log_group_event(
+    event: str,
+    group_id: str,
+    acting_user_id: str,
+    target_user_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Log group lifecycle events without credentials or message contents."""
+    logger.info(
+        "%s | group=%s acting_user=%s%s%s",
+        event,
+        _safe_id(group_id),
+        _safe_id(acting_user_id),
+        f" target_user={_safe_id(target_user_id)}" if target_user_id else "",
+        f" reason={reason[:80]}" if reason else "",
+    )
+
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:

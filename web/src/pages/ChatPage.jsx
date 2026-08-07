@@ -132,6 +132,23 @@ export default function ChatPage() {
     wsClient.on('reaction_added', handleReactionEvent)
     wsClient.on('reaction_removed', handleReactionEvent)
 
+    const refreshConversations = () => window.dispatchEvent(new Event('conversation-created'))
+    wsClient.on('group_created', refreshConversations)
+    wsClient.on('member_added', (data) => {
+      if (data.conversation?.id === conversationId) setConversation(data.conversation)
+      refreshConversations()
+    })
+    wsClient.on('member_removed', (data) => {
+      if (data.conversation_id === conversationId && data.username === user?.username) {
+        navigate('/test/chat')
+      }
+      refreshConversations()
+    })
+    wsClient.on('group_updated', (data) => {
+      if (data.conversation?.id === conversationId) setConversation(data.conversation)
+      refreshConversations()
+    })
+
     wsClient.on('auth_success', () => {
       setWsStatus('connected')
       wsClient.joinConversation(conversationId)

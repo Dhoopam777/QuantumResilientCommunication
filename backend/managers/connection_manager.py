@@ -300,6 +300,14 @@ class ConnectionManager:
                 info.subscribed_conversations.add(conversation_id)
                 self.conversation_subscriptions.setdefault(conversation_id, set()).add(ws)
 
+    def unsubscribe_user_from_conversation(
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID
+    ) -> None:
+        """Remove a user's authenticated sockets from a conversation."""
+        for ws, info in list(self.active_connections.items()):
+            if info.authenticated and info.user_id == user_id:
+                self.unsubscribe(ws, conversation_id)
+
     async def send_to_connection(self, websocket: WebSocket, message: dict) -> None:
         """
         Send a message to a single WebSocket connection.

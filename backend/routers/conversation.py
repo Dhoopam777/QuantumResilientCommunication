@@ -62,6 +62,8 @@ def _build_conversation_response(db, conversation) -> ConversationResponse:
         id=conversation.id,
         is_group=conversation.is_group,
         group_name=conversation.group_name,
+        group_description=conversation.group_description,
+        group_avatar_url=conversation.group_avatar_url,
         created_by=conversation.created_by,
         is_encrypted=conversation.is_encrypted,
         created_at=conversation.created_at,

@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     MESSAGE_DELETE_RATE_LIMIT: int = 30  # deletes per minute per user
     MESSAGE_REACTION_RATE_LIMIT: int = 60  # reaction mutations per minute per user
     CONVERSATION_REQUESTS_PER_DAY: int = 20
+    GROUP_ACTION_RATE_LIMIT: int = 60
 
 
 # Create a singleton settings instance

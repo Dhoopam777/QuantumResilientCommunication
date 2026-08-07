@@ -47,6 +47,18 @@ class Conversation(Base, TimestampMixin):
         comment="Name for group conversations"
     )
 
+    group_description: Mapped[Optional[str]] = mapped_column(
+        String(1000),
+        nullable=True,
+        comment="Description for group conversations"
+    )
+
+    group_avatar_url: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Avatar URL for group conversations"
+    )
+
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),

@@ -4,7 +4,7 @@ const navItems = [
   { to: '/test/chat', label: 'Chats', icon: '💬', end: true },
   { to: '/test/requests', label: 'Requests', icon: '📩' },
   { to: '/test/friends', label: 'Friends', icon: '👥', disabled: true },
-  { to: '/test/groups', label: 'Groups', icon: '👨‍👩‍👧‍👦', disabled: true },
+  { to: '/test/groups', label: 'Groups', icon: '👨‍👩‍👧‍👦' },
   { to: '/test/ai', label: 'AI', icon: '🤖', disabled: true },
   { to: '/test/settings', label: 'Settings', icon: '⚙️', disabled: true },
   { to: '/test/profile', label: 'Profile', icon: '👤' },

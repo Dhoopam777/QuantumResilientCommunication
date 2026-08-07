@@ -25,6 +25,7 @@ class RateLimiter:
         max_deletes_per_minute: int = settings.MESSAGE_DELETE_RATE_LIMIT,
         max_reactions_per_minute: int = settings.MESSAGE_REACTION_RATE_LIMIT,
         max_requests_per_day: int = settings.CONVERSATION_REQUESTS_PER_DAY,
+        max_group_actions_per_minute: int = settings.GROUP_ACTION_RATE_LIMIT,
     ):
         self.max_uploads_per_minute = max_uploads_per_minute
         self.max_concurrent = max_concurrent
@@ -32,12 +33,14 @@ class RateLimiter:
         self.max_deletes_per_minute = max_deletes_per_minute
         self.max_reactions_per_minute = max_reactions_per_minute
         self.max_requests_per_day = max_requests_per_day
+        self.max_group_actions_per_minute = max_group_actions_per_minute
         self._upload_times: dict[str, list[float]] = defaultdict(list)
         self._concurrent: dict[str, int] = defaultdict(int)
         self._edit_times: dict[str, list[float]] = defaultdict(list)
         self._delete_times: dict[str, list[float]] = defaultdict(list)
         self._reaction_times: dict[str, list[float]] = defaultdict(list)
         self._request_times: dict[str, list[float]] = defaultdict(list)
+        self._group_action_times: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
 
     def _cleanup_old(self, user_id: str, now: float) -> None:
@@ -170,6 +173,23 @@ class RateLimiter:
                     headers={"Retry-After": "86400"},
                 )
             self._request_times[user_id].append(now)
+
+    def check_group_action_rate(self, user_id: str) -> None:
+        """Limit group mutations to reduce abuse and replay pressure."""
+        from fastapi import HTTPException, status
+
+        with self._lock:
+            now = time.time()
+            self._group_action_times[user_id] = [
+                t for t in self._group_action_times[user_id] if now - t < 60.0
+            ]
+            if len(self._group_action_times[user_id]) >= self.max_group_actions_per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Group action rate limit exceeded",
+                    headers={"Retry-After": "60"},
+                )
+            self._group_action_times[user_id].append(now)
 
     def release_concurrent(self, user_id: str) -> None:
         """Release a concurrent upload slot."""

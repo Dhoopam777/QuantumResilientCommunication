@@ -66,6 +66,9 @@ from routers.conversation_request import router as conversation_request_router, 
 app.include_router(conversation_request_router)
 app.include_router(users_router)
 
+from routers.group import router as group_router
+app.include_router(group_router)
+
 
 if __name__ == "__main__":
     import uvicorn
