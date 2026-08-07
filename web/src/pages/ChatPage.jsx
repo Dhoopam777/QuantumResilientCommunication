@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   conversationApi,
+  groupApi,
   messageApi,
   getAccessToken,
   getLastConversationId,
@@ -265,6 +266,18 @@ export default function ChatPage() {
     } else {
       throw new Error(res.data?.detail || 'Failed to update reaction')
     }
+
+    const handleAddGroupMember = async (username) => {
+      if (!conversation?.is_group) return
+      const res = await groupApi.addMember(conversation.id, username)
+      if (res.status === 200) setConversation(res.data)
+    }
+
+    const handleRemoveGroupMember = async (username) => {
+      if (!conversation?.is_group) return
+      const res = await groupApi.removeMember(conversation.id, username)
+      if (res.status === 200) setConversation(res.data)
+    }
   }
 
   const handleSend = async (content, replyTarget = null) => {
@@ -308,7 +321,13 @@ export default function ChatPage() {
       }
       showDetails={showDetails}
       detailsPanel={
-        <DetailsPanel conversation={conversation} currentUserId={user?.id} />
+        <DetailsPanel
+          conversation={conversation}
+          currentUserId={user?.id}
+          canManage={conversation?.is_group && conversation.created_by === user?.id}
+          onAddMember={handleAddGroupMember}
+          onRemoveMember={handleRemoveGroupMember}
+        />
       }
     >
       {conversationId ? (

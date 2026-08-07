@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
+import { useState } from 'react'
 import Avatar from '../common/Avatar'
 import IconButton from '../common/IconButton'
 
-export default function DetailsPanel({ conversation, currentUserId }) {
+export default function DetailsPanel({ conversation, currentUserId, canManage = false, onAddMember, onRemoveMember }) {
+  const [memberUsername, setMemberUsername] = useState('')
   if (!conversation) return null
 
   let title = 'Direct Message'
@@ -72,9 +74,43 @@ export default function DetailsPanel({ conversation, currentUserId }) {
                   <div className="text-sm text-text-primary truncate">{p.display_name || p.username}</div>
                   <div className="text-xs text-text-muted truncate">@{p.username}</div>
                 </div>
-              </div>
+                {p.user_id === conversation.created_by && (
+                  <span className="text-[10px] text-accent ml-auto">Owner</span>
+                )}
+                {canManage && p.user_id !== conversation.created_by && (
+                  <button
+                    type="button"
+                    className="text-xs text-danger"
+                    onClick={() => onRemoveMember?.(p.username)}
+                    title={`Remove @${p.username}`}
+                  >
+                    Remove
+                  </button>
+                )}
+                </div>
             ))}
           </div>
+          {canManage && (
+            <form
+                className="mt-3 flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  if (memberUsername.trim()) {
+                    onAddMember?.(memberUsername.trim())
+                    setMemberUsername('')
+                  }
+                }}
+            >
+                <input
+                  className="input min-w-0 text-xs"
+                  placeholder="Username"
+                  value={memberUsername}
+                  onChange={(event) => setMemberUsername(event.target.value)}
+                  maxLength={50}
+                />
+                <button type="submit" className="btn-secondary text-xs">Add</button>
+            </form>
+          )}
         </div>
       )}
 
