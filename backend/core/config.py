@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Message Edit Security
     MESSAGE_EDIT_RATE_LIMIT: int = 30  # edits per minute per user
 
+    # Message Delete Security
+    MESSAGE_DELETE_RATE_LIMIT: int = 30  # deletes per minute per user
+
 
 # Create a singleton settings instance
 settings = Settings()

@@ -45,6 +45,22 @@ class MessageEdit(BaseModel):
     )
 
 
+class MessageDelete(BaseModel):
+    """
+    Schema for deleting a message.
+
+    Supports two modes:
+    - "me": Hide the message only for the requesting user.
+    - "everyone": Soft-delete the message for all participants.
+    """
+
+    mode: str = Field(
+        ...,
+        pattern="^(me|everyone)$",
+        description="Deletion mode: 'me' (hide for requesting user) or 'everyone' (soft-delete for all)",
+    )
+
+
 class ReplyPreview(BaseModel):
     """
     Minimal preview of the message being replied to.
@@ -80,5 +96,8 @@ class MessageResponse(BaseModel):
     is_edited: bool
     edited_at: Optional[datetime] = None
     is_deleted: bool
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[uuid.UUID] = None
+    delete_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime

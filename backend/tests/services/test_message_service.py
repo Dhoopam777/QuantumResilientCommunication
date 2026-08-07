@@ -13,6 +13,7 @@ from services.message_service import (
     MessageService,
     send_message,
     edit_message,
+    delete_message,
     get_message_by_id,
     get_conversation_messages,
 )

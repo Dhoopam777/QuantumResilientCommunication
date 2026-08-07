@@ -22,13 +22,16 @@ class RateLimiter:
         max_uploads_per_minute: int = settings.ATTACHMENT_UPLOAD_RATE_LIMIT,
         max_concurrent: int = settings.ATTACHMENT_MAX_CONCURRENT_UPLOADS,
         max_edits_per_minute: int = settings.MESSAGE_EDIT_RATE_LIMIT,
+        max_deletes_per_minute: int = settings.MESSAGE_DELETE_RATE_LIMIT,
     ):
         self.max_uploads_per_minute = max_uploads_per_minute
         self.max_concurrent = max_concurrent
         self.max_edits_per_minute = max_edits_per_minute
+        self.max_deletes_per_minute = max_deletes_per_minute
         self._upload_times: dict[str, list[float]] = defaultdict(list)
         self._concurrent: dict[str, int] = defaultdict(int)
         self._edit_times: dict[str, list[float]] = defaultdict(list)
+        self._delete_times: dict[str, list[float]] = defaultdict(list)
         self._lock = threading.Lock()
 
     def _cleanup_old(self, user_id: str, now: float) -> None:
@@ -84,6 +87,33 @@ class RateLimiter:
                 )
 
             self._edit_times[user_id].append(now)
+
+    def _cleanup_old_deletes(self, user_id: str, now: float) -> None:
+        """Remove delete timestamps older than 60 seconds."""
+        self._delete_times[user_id] = [
+            t for t in self._delete_times[user_id] if now - t < 60.0
+        ]
+
+    def check_delete_rate(self, user_id: str) -> None:
+        """
+        Check if user is within message delete rate limits.
+        Raises HTTPException 429 if exceeded.
+        """
+        from fastapi import HTTPException, status
+
+        with self._lock:
+            now = time.time()
+            self._cleanup_old_deletes(user_id, now)
+
+            if len(self._delete_times[user_id]) >= self.max_deletes_per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Message delete rate limit exceeded. Maximum {self.max_deletes_per_minute} "
+                    f"deletes per minute.",
+                    headers={"Retry-After": "60"},
+                )
+
+            self._delete_times[user_id].append(now)
 
     def check_concurrent(self, user_id: str) -> None:
         """

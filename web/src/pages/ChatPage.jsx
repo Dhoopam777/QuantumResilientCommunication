@@ -105,6 +105,18 @@ export default function ChatPage() {
       setEditingId((current) => (current === msg.id ? null : current))
     })
 
+    wsClient.on('message_deleted', (data) => {
+      const msg = data.message
+      if (!msg || !msg.id) return
+      // Update the message in-place in both REST-fetched and WS-received messages
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+      )
+      setWsMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+      )
+    })
+
     wsClient.on('auth_success', () => {
       setWsStatus('connected')
       wsClient.joinConversation(conversationId)
@@ -192,6 +204,25 @@ export default function ChatPage() {
     }
   }
 
+  const handleDeleteMessage = async (message, mode) => {
+    if (!message || !message.id) return
+    const res = await messageApi.delete(message.id, mode)
+    if (res.status === 200 && res.data) {
+      // The WebSocket broadcast will handle the UI update,
+      // but also update local state in case the sender doesn't
+      // receive their own broadcast (some setups exclude sender).
+      setMessages((prev) =>
+        prev.map((m) => (m.id === res.data.id ? { ...m, ...res.data } : m))
+      )
+      setWsMessages((prev) =>
+        prev.map((m) => (m.id === res.data.id ? { ...m, ...res.data } : m))
+      )
+    } else {
+      const err = new Error(res.data?.detail || 'Failed to delete message')
+      throw err
+    }
+  }
+
   const handleSend = async (content, replyTarget = null) => {
     if (!conversationId || !content.trim()) return
     const payload = {
@@ -244,6 +275,7 @@ export default function ChatPage() {
             currentUserId={user?.id}
             onReply={handleReply}
             onEdit={handleEditMessage}
+            onDelete={handleDeleteMessage}
             editingId={editingId}
             onStartEdit={handleStartEdit}
             onCancelEdit={handleCancelEdit}

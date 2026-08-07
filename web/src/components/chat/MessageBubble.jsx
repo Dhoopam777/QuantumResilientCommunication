@@ -1,11 +1,45 @@
 import { useState, useRef, useEffect } from 'react'
 
+// Confirmation dialog for deletion mode selection
+function DeleteConfirmationDialog({ isOpen, onDelete, onCancel, isSender }) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-surface-elevated border border-border rounded-lg shadow-popover p-4 w-64">
+        <h3 className="text-sm font-semibold text-text-primary mb-3">Delete message?</h3>
+        <button
+          className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-surface-hover rounded-md mb-1"
+          onClick={() => onDelete('me')}
+        >
+          Delete for Me
+        </button>
+        {isSender && (
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-900/20 rounded-md mb-1"
+            onClick={() => onDelete('everyone')}
+          >
+            Delete for Everyone
+          </button>
+        )}
+        <button
+          className="w-full text-left px-3 py-2 text-sm text-text-muted hover:bg-surface-hover rounded-md"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function MessageBubble({
   message,
   isOutgoing,
   onReply,
   onScrollToMessage,
   onEdit,
+  onDelete,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -13,6 +47,8 @@ export default function MessageBubble({
   const [editContent, setEditContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [editError, setEditError] = useState(null)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const editInputRef = useRef(null)
 
   const time = message.created_at
@@ -22,6 +58,11 @@ export default function MessageBubble({
   const editedTime = message.edited_at
     ? new Date(message.edited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : ''
+
+  // Determine if this message is deleted (soft-deleted for all, or deleted for me by current user)
+  const isDeletedForMe =
+    message.is_deleted ||
+    (message.deleted_at && message.deleted_by && message.delete_type === 'me')
 
   // Initialize edit content when editing starts
   useEffect(() => {
@@ -78,6 +119,51 @@ export default function MessageBubble({
       e.preventDefault()
       handleCancelEdit()
     }
+  }
+
+  const handleDeleteClick = () => {
+    setShowDeleteDialog(true)
+  }
+
+  const handleDeleteConfirm = async (mode) => {
+    setIsDeleting(true)
+    setShowDeleteDialog(false)
+    try {
+      await onDelete(message, mode)
+    } catch (err) {
+      // Error handling is in the parent component
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleCancelDelete = () => {
+    setShowDeleteDialog(false)
+  }
+
+  // If the message is deleted for everyone, show placeholder
+  if (message.is_deleted && message.delete_type === 'everyone') {
+    return (
+      <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} group relative`}>
+        <div
+          className={`relative max-w-[70%] rounded-bubble px-3 py-2 text-sm shadow-card ${
+            isOutgoing
+              ? 'bg-bubble-outgoing text-white/50 rounded-br-sm'
+              : 'bg-bubble-incoming text-text-muted rounded-bl-sm'
+          }`}
+        >
+          <div className="italic">This message was deleted.</div>
+          <div className={`flex items-center mt-1 text-[10px] ${isOutgoing ? 'text-white/50' : 'text-text-muted'}`}>
+            <span>{time}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If deleted for me only, hide entirely (the requesting user doesn't see it)
+  if (isDeletedForMe && message.delete_type === 'me') {
+    return null
   }
 
   return (
@@ -204,9 +290,25 @@ export default function MessageBubble({
                 ✏️
               </button>
             )}
-            <button className="icon-btn !p-1 text-xs" title="Delete" aria-label="Delete">🗑️</button>
+            <button
+              className="icon-btn !p-1 text-xs"
+              title="Delete"
+              aria-label="Delete"
+              onClick={handleDeleteClick}
+              disabled={isDeleting}
+            >
+              🗑️
+            </button>
           </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <DeleteConfirmationDialog
+          isOpen={showDeleteDialog}
+          isSender={isOutgoing}
+          onDelete={handleDeleteConfirm}
+          onCancel={handleCancelDelete}
+        />
       </div>
     </div>
   )

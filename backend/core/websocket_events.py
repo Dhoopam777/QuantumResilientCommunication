@@ -32,6 +32,7 @@ WS_EVENT_JOINED_CONVERSATION = "joined_conversation"
 WS_EVENT_LEFT_CONVERSATION = "left_conversation"
 WS_EVENT_NEW_MESSAGE = "new_message"
 WS_EVENT_MESSAGE_EDITED = "message_edited"
+WS_EVENT_MESSAGE_DELETED = "message_deleted"
 WS_EVENT_ERROR = "error"
 WS_EVENT_PONG = "pong"
 
@@ -40,7 +41,6 @@ WS_EVENT_PONG = "pong"
 # WS_EVENT_TYPING_INDICATOR = "typing_indicator"
 # WS_EVENT_READ_RECEIPT = "read_receipt"
 # WS_EVENT_PRESENCE_UPDATE = "presence_update"
-# WS_EVENT_MESSAGE_DELETED = "message_deleted"
 
 # ---------------------------------------------------------------------------
 # Custom WebSocket close codes
@@ -70,6 +70,7 @@ OUTGOING_EVENT_TYPES = frozenset({
     WS_EVENT_LEFT_CONVERSATION,
     WS_EVENT_NEW_MESSAGE,
     WS_EVENT_MESSAGE_EDITED,
+    WS_EVENT_MESSAGE_DELETED,
     WS_EVENT_ERROR,
     WS_EVENT_PONG,
 })
@@ -87,6 +88,7 @@ __all__ = [
     "WS_EVENT_LEFT_CONVERSATION",
     "WS_EVENT_NEW_MESSAGE",
     "WS_EVENT_MESSAGE_EDITED",
+    "WS_EVENT_MESSAGE_DELETED",
     "WS_EVENT_ERROR",
     "WS_EVENT_PONG",
     # Close codes

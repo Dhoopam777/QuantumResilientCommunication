@@ -8,6 +8,7 @@ export default function MessageList({
   onReply,
   onScrollToMessage,
   onEdit,
+  onDelete,
   editingId,
   onStartEdit,
   onCancelEdit,
@@ -71,6 +72,7 @@ export default function MessageList({
             onReply={onReply}
             onScrollToMessage={handleScrollToMessage}
             onEdit={onEdit}
+            onDelete={onDelete}
             isEditing={editingId === m.id}
             onStartEdit={onStartEdit}
             onCancelEdit={onCancelEdit}

@@ -100,6 +100,26 @@ def log_message_edit_rejected(
     )
 
 
+def log_message_deleted(
+    user_id: str, message_id: str, conversation_id: str, delete_mode: str
+) -> None:
+    """Log a successful message deletion. Never logs message contents."""
+    logger.info(
+        "MESSAGE_DELETED | user=%s message=%s conversation=%s mode=%s",
+        _safe_id(user_id), _safe_id(message_id), _safe_id(conversation_id), delete_mode,
+    )
+
+
+def log_message_delete_rejected(
+    user_id: str, message_id: str, conversation_id: str, reason: str
+) -> None:
+    """Log a rejected message deletion. Never logs message contents."""
+    logger.warning(
+        "MESSAGE_DELETE_REJECTED | user=%s message=%s conversation=%s reason=%s",
+        _safe_id(user_id), _safe_id(message_id), _safe_id(conversation_id), reason,
+    )
+
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:

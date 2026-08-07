@@ -107,6 +107,24 @@ class Message(Base, TimestampMixin):
         comment="Soft delete flag"
     )
 
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp when the message was deleted (NULL if not deleted)"
+    )
+
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="User who initiated the deletion (NULL if not deleted)"
+    )
+
+    delete_type: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Deletion mode: 'me' (hidden for requesting user) or 'everyone' (hidden for all)"
+    )
+
     # Relationships
     conversation: Mapped["Conversation"] = relationship(
         "Conversation",

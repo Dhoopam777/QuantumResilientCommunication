@@ -239,6 +239,99 @@ class MessageService:
             raise
 
     @staticmethod
+    def delete_message(
+        db: Session,
+        message_id: uuid.UUID,
+        user_id: uuid.UUID,
+        mode: str,
+    ) -> Message:
+        """
+        Delete a message.
+
+        Supports two modes:
+        - "me": Hide the message only for the requesting user. The database
+          row is preserved and other participants continue seeing the message.
+        - "everyone": Soft-delete the message for all participants. The
+          database row, message ID, reply relationships, attachment metadata,
+          and audit trail are all preserved.
+
+        Security model:
+        - The user must be an active participant in the message's conversation.
+        - "everyone" mode requires the user to be the original sender.
+        - System messages cannot be deleted.
+        - Already-deleted messages cannot be deleted again.
+        - Cross-conversation requests are rejected (message ID must belong
+          to a conversation the user is a participant of).
+
+        Args:
+            db: Database session
+            message_id: UUID of the message to delete
+            user_id: UUID of the user attempting the deletion
+            mode: Deletion mode — "me" or "everyone"
+
+        Returns:
+            Message: The updated message object
+
+        Raises:
+            ValueError: If:
+                - Message does not exist
+                - Message is already deleted
+                - Message is a system message
+                - User is not an active participant in the conversation
+                - Mode is "everyone" and user is not the original sender
+                - Mode is invalid
+        """
+        # Validate mode
+        if mode not in ("me", "everyone"):
+            raise ValueError("Invalid delete mode. Must be 'me' or 'everyone'")
+
+        # Load the message
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if message is None:
+            raise ValueError("Message not found")
+
+        # Reject already-deleted messages
+        if message.is_deleted:
+            raise ValueError("Message is already deleted")
+
+        # Reject system messages
+        if message.message_type == "system":
+            raise ValueError("Cannot delete a system message")
+
+        # Conversation authorization — user must be an active participant
+        if not is_participant(db, message.conversation_id, user_id):
+            raise ValueError("User is not a participant in this conversation")
+
+        # Ownership verification for "everyone" mode — only the sender can
+        # delete for everyone
+        if mode == "everyone" and message.sender_id != user_id:
+            raise ValueError("You can only delete your own messages for everyone")
+
+        # Apply the deletion
+        now = datetime.now(timezone.utc)
+        message.deleted_at = now
+        message.deleted_by = user_id
+        message.delete_type = mode
+
+        if mode == "everyone":
+            # Soft delete for all participants
+            message.is_deleted = True
+
+        # Update conversation's updated_at timestamp
+        conversation = db.query(Conversation).filter(Conversation.id == message.conversation_id).first()
+        if conversation:
+            conversation.updated_at = now
+
+        # Commit the transaction
+        try:
+            db.commit()
+            db.refresh(message)
+            return message
+        except Exception:
+            db.rollback()
+            raise
+
+    @staticmethod
     def get_message_by_id(db: Session, message_id: uuid.UUID) -> Optional[Message]:
         """
         Retrieve a message by its ID.
@@ -347,6 +440,21 @@ def edit_message(
         user_id=user_id,
         content_encrypted=content_encrypted,
         content_hash=content_hash,
+    )
+
+
+def delete_message(
+    db: Session,
+    message_id: uuid.UUID,
+    user_id: uuid.UUID,
+    mode: str,
+) -> Message:
+    """Convenience function to delete a message."""
+    return MessageService.delete_message(
+        db=db,
+        message_id=message_id,
+        user_id=user_id,
+        mode=mode,
     )
 
 
