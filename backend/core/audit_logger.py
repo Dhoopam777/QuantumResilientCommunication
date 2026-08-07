@@ -185,6 +185,24 @@ def log_pqc_event(event: str, user_id: str, reason: str | None = None) -> None:
         f" reason={reason[:80]}" if reason else "",
     )
 
+
+def log_session_event(
+    event: str,
+    user_id: str,
+    session_id: str | None = None,
+    conversation_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Log session lifecycle metadata without cryptographic material."""
+    logger.info(
+        "%s | user=%s%s%s%s",
+        event,
+        _safe_id(user_id),
+        f" session={_safe_id(session_id)}" if session_id else "",
+        f" conversation={_safe_id(conversation_id)}" if conversation_id else "",
+        f" reason={reason[:80]}" if reason else "",
+    )
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:

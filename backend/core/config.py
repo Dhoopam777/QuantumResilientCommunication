@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     PQC_ENABLED: bool = False
     PQC_ALGORITHM: str = "ML-KEM-768+ML-DSA-65"
     PQC_MASTER_KEY: str = ""
+    PQC_SESSION_TTL_MINUTES: int = 60
+    PQC_SESSION_RATE_LIMIT: int = 30
 
     @model_validator(mode="after")
     def validate_pqc_configuration(self):
@@ -81,6 +83,8 @@ class Settings(BaseSettings):
             )
         if self.PQC_ENABLED and self.PQC_ALGORITHM != "ML-KEM-768+ML-DSA-65":
             raise ValueError("Unsupported PQC_ALGORITHM")
+        if self.PQC_SESSION_TTL_MINUTES <= 0 or self.PQC_SESSION_RATE_LIMIT <= 0:
+            raise ValueError("PQC session limits must be positive")
         return self
 
 

@@ -27,6 +27,7 @@ from models.conversation_participant import ConversationParticipant  # noqa: F40
 from models.message import Message  # noqa: F401
 from models.message_reaction import MessageReaction  # noqa: F401
 from models.conversation_request import ConversationRequest  # noqa: F401
+from models.session_key import SessionKey  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

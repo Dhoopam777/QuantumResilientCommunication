@@ -14,11 +14,15 @@ export default function Profile() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [pqc, setPqc] = useState(null)
+  const [sessions, setSessions] = useState([])
 
   useEffect(() => {
     if (!user?.username) return
     cryptoApi.publicKey(user.username).then((res) => {
       if (res.status === 200) setPqc(res.data)
+    })
+    cryptoApi.sessions().then((res) => {
+      if (res.status === 200) setSessions(res.data || [])
     })
   }, [user?.username])
 
@@ -63,7 +67,15 @@ export default function Profile() {
                 {pqc ? (
                   <div className="mt-2 text-xs text-text-secondary space-y-1">
                     <div>Algorithms: {pqc.algorithm_version}</div>
-                    <div>Key Created: {user.pq_key_created_at ? new Date(user.pq_key_created_at).toLocaleDateString() : 'available'}</div>
+                    <div>Key Created: {pqc.created_at ? new Date(pqc.created_at).toLocaleDateString() : 'available'}</div>
+                    <div>Quantum Session: {sessions.some((session) => session.status === 'active') ? 'Active' : 'Not established'}</div>
+                    {sessions[0] && (
+                      <>
+                        <div>Session Algorithm: {sessions[0].algorithm}</div>
+                        <div>Session Created: {new Date(sessions[0].created_at).toLocaleDateString()}</div>
+                        <div>Session Expires: {new Date(sessions[0].expires_at).toLocaleDateString()}</div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <p className="mt-2 text-xs text-text-muted">Quantum identity keys are unavailable.</p>

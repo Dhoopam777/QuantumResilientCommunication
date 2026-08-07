@@ -6,12 +6,17 @@ handled here.
 """
 
 import base64
-from datetime import datetime, timezone
+import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core.config import settings
 from models.user import User
+from models.session_key import SessionKey
 from pqcrypto.kem import ml_kem_768
 from pqcrypto.sign import ml_dsa_65
 
@@ -73,6 +78,82 @@ class CryptoService:
         user.pq_signature_private_key_encrypted = CryptoService._encrypt(signature_private)
         user.pq_algorithm_version = ALGORITHM_VERSION
         user.pq_key_created_at = datetime.now(timezone.utc)
+
+    @staticmethod
+    def _decode(value: str) -> bytes:
+        try:
+            return base64.b64decode(value.encode("ascii"), validate=True)
+        except (UnicodeEncodeError, ValueError, base64.binascii.Error) as exc:
+            raise RuntimeError("Invalid encoded cryptographic value") from exc
+
+    @staticmethod
+    def _derive_session_key(shared_secret: bytes, ciphertext: bytes) -> bytes:
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=ciphertext,
+            info=b"qrc/ml-kem-768/session/aes-256",
+        ).derive(shared_secret)
+
+    @staticmethod
+    def create_session(
+        initiator_id: uuid.UUID,
+        recipient: User,
+        conversation_id: uuid.UUID,
+    ) -> tuple[SessionKey, bytes]:
+        """Encapsulate a fresh ML-KEM secret and return only its derived key."""
+        if not settings.PQC_ENABLED or settings.PQC_ALGORITHM != ALGORITHM_VERSION:
+            raise RuntimeError("PQC session establishment is unavailable")
+        if not recipient.pq_kem_public_key:
+            raise RuntimeError("Recipient public key unavailable")
+
+        public_key = CryptoService._decode(recipient.pq_kem_public_key)
+        ciphertext, shared_secret = ml_kem_768.encrypt(public_key)
+        try:
+            session_key = CryptoService._derive_session_key(shared_secret, ciphertext)
+        finally:
+            del shared_secret
+
+        session = SessionKey(
+            conversation_id=conversation_id,
+            initiator_id=initiator_id,
+            recipient_id=recipient.id,
+            kem_ciphertext=CryptoService._encode(ciphertext),
+            session_key_id=uuid.UUID(bytes=secrets.token_bytes(16), version=4),
+            algorithm=ALGORITHM_VERSION,
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(minutes=settings.PQC_SESSION_TTL_MINUTES),
+        )
+        return session, session_key
+
+    @staticmethod
+    def recover_session(session: SessionKey, recipient: User) -> bytes:
+        """Decapsulate and derive the same AES-256 session key."""
+        if session.recipient_id != recipient.id:
+            raise PermissionError("Session recipient mismatch")
+        if CryptoService.expire_session(session):
+            raise RuntimeError("Session has expired")
+        if session.algorithm != ALGORITHM_VERSION or not recipient.pq_kem_private_key_encrypted:
+            raise RuntimeError("Session cryptographic material unavailable")
+
+        private_key = CryptoService.decrypt_private_key(
+            recipient.pq_kem_private_key_encrypted
+        )
+        ciphertext = CryptoService._decode(session.kem_ciphertext)
+        shared_secret = ml_kem_768.decrypt(private_key, ciphertext)
+        try:
+            return CryptoService._derive_session_key(shared_secret, ciphertext)
+        finally:
+            del private_key
+            del shared_secret
+
+    @staticmethod
+    def expire_session(session: SessionKey) -> bool:
+        """Return whether a session is expired without mutating stored metadata."""
+        expires_at = session.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at <= datetime.now(timezone.utc)
 
     @staticmethod
     def public_key_metadata(user: User) -> dict:
