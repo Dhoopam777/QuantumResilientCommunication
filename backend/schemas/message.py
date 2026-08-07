@@ -21,6 +21,7 @@ class MessageCreate(BaseModel):
     message_type: str = "text"
     reply_to: Optional[uuid.UUID] = None
     reply_to_message_id: Optional[uuid.UUID] = None
+    attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
 
 
 class MessageEdit(BaseModel):

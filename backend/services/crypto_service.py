@@ -172,7 +172,10 @@ class CryptoService:
             "sender_id": str(sender_id),
             "message_type": message_type,
             "content_encrypted": content_encrypted,
-            "attachments": attachments_metadata or [],
+            "attachments": sorted(
+                attachments_metadata or [],
+                key=lambda attachment: str(attachment.get("id", "")),
+            ),
             "timestamp": timestamp,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")

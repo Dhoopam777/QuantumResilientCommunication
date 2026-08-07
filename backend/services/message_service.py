@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from models.message import Message
 from models.conversation import Conversation
 from models.user import User
+from models.attachment import Attachment
 from services.crypto_service import CryptoService
 from core.config import settings
 from services.conversation_service import is_participant
@@ -79,6 +80,7 @@ class MessageService:
         message_type: str = "text",
         reply_to: Optional[uuid.UUID] = None,
         reply_to_message_id: Optional[uuid.UUID] = None,
+        attachment_ids: Optional[list[uuid.UUID]] = None,
         attachments_metadata: Optional[list[dict]] = None,
     ) -> Message:
         """
@@ -131,6 +133,33 @@ class MessageService:
 
         signature_created_at = datetime.now(timezone.utc)
         sender = db.query(User).filter(User.id == sender_id).first()
+        attachments = []
+        if attachment_ids:
+            attachments = (
+                db.query(Attachment)
+                .filter(
+                    Attachment.id.in_(attachment_ids),
+                    Attachment.conversation_id == conversation_id,
+                    Attachment.uploader_id == sender_id,
+                    Attachment.message_id.is_(None),
+                    Attachment.is_deleted.is_(False),
+                )
+                .all()
+            )
+            if len(attachments) != len(set(attachment_ids)):
+                raise ValueError("Invalid attachment")
+            attachments_metadata = [
+                {
+                    "id": str(attachment.id),
+                    "original_filename": attachment.original_filename,
+                    "mime_type": attachment.mime_type,
+                    "file_size": attachment.file_size,
+                    "checksum_sha256": attachment.checksum_sha256,
+                    "width": attachment.width,
+                    "height": attachment.height,
+                }
+                for attachment in attachments
+            ]
         signature = None
         signature_algorithm = None
         if settings.PQC_ENABLED:
@@ -162,6 +191,9 @@ class MessageService:
             signature_created_at=signature_created_at if signature else None,
         )
         db.add(message)
+        db.flush()
+        for attachment in attachments:
+            attachment.message_id = message.id
 
         # Update conversation's updated_at timestamp
         conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
@@ -453,6 +485,7 @@ def send_message(
     message_type: str = "text",
     reply_to: Optional[uuid.UUID] = None,
     reply_to_message_id: Optional[uuid.UUID] = None,
+    attachment_ids: Optional[list[uuid.UUID]] = None,
 ) -> Message:
     """Convenience function to send a message."""
     return MessageService.send_message(
@@ -464,6 +497,7 @@ def send_message(
         message_type=message_type,
         reply_to=reply_to,
         reply_to_message_id=reply_to_message_id,
+        attachment_ids=attachment_ids,
     )
 
 

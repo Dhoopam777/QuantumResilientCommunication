@@ -37,6 +37,7 @@ from core.rate_limiter import rate_limiter
 from managers.connection_manager import connection_manager
 from models.user import User
 from models.message import Message
+from models.attachment import Attachment
 from core.config import settings
 from services.crypto_service import CryptoService
 from services.reaction_service import (
@@ -88,7 +89,22 @@ def _serialize_message(
     """
     signature_status = "unverified"
     if settings.PQC_ENABLED:
-        if not CryptoService.verify_message(message, message.sender):
+        attachments_metadata = [
+            {
+                "id": str(attachment.id),
+                "original_filename": attachment.original_filename,
+                "mime_type": attachment.mime_type,
+                "file_size": attachment.file_size,
+                "checksum_sha256": attachment.checksum_sha256,
+                "width": attachment.width,
+                "height": attachment.height,
+            }
+            for attachment in db.query(Attachment)
+            .filter(Attachment.message_id == message.id, Attachment.is_deleted.is_(False))
+            .order_by(Attachment.id.asc())
+            .all()
+        ]
+        if not CryptoService.verify_message(message, message.sender, attachments_metadata):
             log_message_signature_event(
                 "MESSAGE_VERIFICATION_FAILED",
                 str(message.sender_id),
@@ -188,6 +204,7 @@ async def send_message_endpoint(
             message_type=message_create.message_type,
             reply_to=message_create.reply_to,
             reply_to_message_id=message_create.reply_to_message_id,
+            attachment_ids=message_create.attachment_ids,
         )
         if message.signature:
             log_message_signature_event(
