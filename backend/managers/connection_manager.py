@@ -284,6 +284,22 @@ class ConnectionManager:
                 logger.warning("Failed to send to WebSocket, removing from subscriptions")
                 self.disconnect(ws)
 
+    async def broadcast_to_user(self, user_id: uuid.UUID, message: dict) -> None:
+        """Send an event only to authenticated connections for one user."""
+        for ws, info in list(self.active_connections.items()):
+            if info.authenticated and info.user_id == user_id:
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    self.disconnect(ws)
+
+    def subscribe_user_to_conversation(self, user_id: uuid.UUID, conversation_id: uuid.UUID) -> None:
+        """Subscribe the user's authenticated sockets after an accepted request."""
+        for ws, info in list(self.active_connections.items()):
+            if info.authenticated and info.user_id == user_id:
+                info.subscribed_conversations.add(conversation_id)
+                self.conversation_subscriptions.setdefault(conversation_id, set()).add(ws)
+
     async def send_to_connection(self, websocket: WebSocket, message: dict) -> None:
         """
         Send a message to a single WebSocket connection.

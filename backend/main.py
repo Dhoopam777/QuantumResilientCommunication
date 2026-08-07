@@ -62,6 +62,10 @@ app.include_router(attachment_router)
 from routers.websocket import router as websocket_router
 app.include_router(websocket_router)
 
+from routers.conversation_request import router as conversation_request_router, users_router
+app.include_router(conversation_request_router)
+app.include_router(users_router)
+
 
 if __name__ == "__main__":
     import uvicorn

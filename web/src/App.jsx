@@ -8,6 +8,7 @@ import CreateConversation from './pages/CreateConversation'
 import ChatPage from './pages/ChatPage'
 import Profile from './pages/Profile'
 import TokenViewer from './pages/TokenViewer'
+import ConversationRequests from './pages/ConversationRequests'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/test/chat/:conversationId/details" element={<ChatPage />} />
           <Route path="/test/conversations/new" element={<Layout><CreateConversation /></Layout>} />
           <Route path="/test/profile" element={<Profile />} />
+          <Route path="/test/requests" element={<ConversationRequests />} />
           <Route path="/test/tokens" element={<Layout><TokenViewer /></Layout>} />
           <Route path="*" element={<Navigate to="/test" replace />} />
         </Routes>

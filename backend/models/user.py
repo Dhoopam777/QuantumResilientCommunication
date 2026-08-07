@@ -137,6 +137,12 @@ class User(Base, TimestampMixin):
         "MessageReaction",
         back_populates="user",
     )
+    sent_conversation_requests: Mapped[list["ConversationRequest"]] = relationship(
+        "ConversationRequest", foreign_keys="ConversationRequest.sender_id", back_populates="sender"
+    )
+    received_conversation_requests: Mapped[list["ConversationRequest"]] = relationship(
+        "ConversationRequest", foreign_keys="ConversationRequest.receiver_id", back_populates="receiver"
+    )
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"

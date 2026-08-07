@@ -29,6 +29,12 @@ export default function ConversationList({ activeConversationId, search = '' }) 
     if (isLoggedIn) fetchConversations()
   }, [isLoggedIn])
 
+  useEffect(() => {
+    const refresh = () => fetchConversations()
+    window.addEventListener('conversation-created', refresh)
+    return () => window.removeEventListener('conversation-created', refresh)
+  }, [isLoggedIn])
+
   // Filter by search
   const filtered = search
     ? conversations.filter((c) => {

@@ -134,6 +134,20 @@ def log_reaction_event(
     )
 
 
+def log_conversation_request_event(
+    event: str, sender_id: str, receiver_id: str, request_id: str, reason: str | None = None
+) -> None:
+    """Log request lifecycle events without usernames, email, JWTs, or contents."""
+    logger.info(
+        "%s | sender=%s receiver=%s request=%s%s",
+        event,
+        _safe_id(sender_id),
+        _safe_id(receiver_id),
+        _safe_id(request_id),
+        f" reason={reason[:80]}" if reason else "",
+    )
+
+
 def _safe_id(value: str) -> str:
     """Sanitize UUID string for logging — only logs first 8 chars."""
     if value and len(str(value)) >= 8:
