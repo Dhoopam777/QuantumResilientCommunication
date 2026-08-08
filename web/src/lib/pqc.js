@@ -153,10 +153,46 @@ export async function decryptMessage(key, ciphertext, nonce, tag) {
   return new TextDecoder().decode(plaintext)
 }
 
+export async function encryptBytes(key, bytes) {
+  const nonce = crypto.getRandomValues(new Uint8Array(12))
+  const combined = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce, tagLength: 128 },
+    key,
+    bytes,
+  ))
+  return {
+    ciphertext: combined.slice(0, -16),
+    nonce: b64(nonce),
+    tag: b64(combined.slice(-16)),
+  }
+}
+
+export async function decryptBytes(key, ciphertext, nonce, tag) {
+  const combined = new Uint8Array([...ciphertext, ...fromB64(tag)])
+  return new Uint8Array(await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: fromB64(nonce), tagLength: 128 },
+    key,
+    combined,
+  ))
+}
+
+export function base64Bytes(bytes) {
+  return b64(bytes)
+}
+
 export async function signMessage(payload) {
   const keys = await readKeys()
   if (!keys) throw new Error('Device keys unavailable')
-  const canonical = JSON.stringify(payload, Object.keys(payload).sort())
+  const canonicalize = (value) => {
+    if (Array.isArray(value)) return value.map(canonicalize)
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]),
+      )
+    }
+    return value
+  }
+  const canonical = JSON.stringify(canonicalize(payload))
   return b64(ml_dsa65.sign(textEncoder.encode(canonical), keys.signatureSecretKey))
 }
 

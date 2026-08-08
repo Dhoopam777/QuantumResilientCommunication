@@ -106,6 +106,21 @@ class ReplyPreview(BaseModel):
     created_at: datetime
 
 
+class MessageAttachment(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    original_filename: str
+    mime_type: str
+    file_extension: str
+    file_size: int
+    encryption_algorithm: Optional[str] = None
+    nonce: Optional[str] = None
+    authentication_tag: Optional[str] = None
+    encrypted_size: Optional[int] = None
+    created_at: datetime
+
+
 class MessageResponse(BaseModel):
     """
     Schema for message responses.
@@ -135,3 +150,4 @@ class MessageResponse(BaseModel):
     encryption_version: Optional[str] = None
     nonce: Optional[str] = None
     authentication_tag: Optional[str] = None
+    attachments: list[MessageAttachment] = Field(default_factory=list)

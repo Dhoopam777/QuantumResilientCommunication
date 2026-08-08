@@ -16,6 +16,7 @@ Security-hardened file attachment operations. Implements:
 """
 
 import hashlib
+import base64
 import io
 import os
 import re
@@ -453,6 +454,10 @@ class AttachmentService:
         uploader_id: uuid.UUID,
         file: UploadFile,
         original_filename: str,
+        encryption_algorithm: Optional[str] = None,
+        declared_mime_type: Optional[str] = None,
+        nonce: Optional[str] = None,
+        authentication_tag: Optional[str] = None,
     ) -> Attachment:
         """
         Process and store an uploaded attachment with full security validation.
@@ -493,7 +498,8 @@ class AttachmentService:
         try:
             async with rate_limiter.upload_context(user_id_str):
                 return await AttachmentService._do_upload(
-                    db, conversation_id, uploader_id, file, original_filename
+                    db, conversation_id, uploader_id, file, original_filename,
+                    encryption_algorithm, declared_mime_type, nonce, authentication_tag,
                 )
         except HTTPException:
             log_rate_limited(user_id_str, "upload")
@@ -506,6 +512,10 @@ class AttachmentService:
         uploader_id: uuid.UUID,
         file: UploadFile,
         original_filename: str,
+        encryption_algorithm: Optional[str] = None,
+        declared_mime_type: Optional[str] = None,
+        nonce: Optional[str] = None,
+        authentication_tag: Optional[str] = None,
     ) -> Attachment:
         """Internal upload processing — called within rate limit context."""
 
@@ -537,6 +547,53 @@ class AttachmentService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Filename is too long (max 255 characters)",
             )
+
+        if encryption_algorithm:
+            if encryption_algorithm != "AES-256-GCM":
+                raise HTTPException(status_code=400, detail="Unsupported encryption algorithm")
+            if not declared_mime_type or declared_mime_type not in settings.ATTACHMENT_ALLOWED_MIME_TYPES:
+                raise HTTPException(status_code=400, detail="Unsupported attachment MIME type")
+            if not nonce or not authentication_tag:
+                raise HTTPException(status_code=400, detail="Encrypted attachment envelope incomplete")
+            try:
+                if len(base64.b64decode(nonce, validate=True)) != 12:
+                    raise ValueError
+                if len(base64.b64decode(authentication_tag, validate=True)) != 16:
+                    raise ValueError
+            except (ValueError, base64.binascii.Error) as exc:
+                raise HTTPException(status_code=400, detail="Invalid encrypted attachment envelope") from exc
+            mime_type = declared_mime_type
+            extension = AttachmentService.extract_extension(safe_filename)
+            try:
+                AttachmentService.validate_extension(mime_type, extension)
+                AttachmentService.validate_no_double_extension(safe_filename)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            checksum = AttachmentService.compute_checksum(content)
+            stored_filename = AttachmentService.generate_stored_filename(extension)
+            AttachmentService.save_file(content, stored_filename)
+            attachment = Attachment(
+                conversation_id=conversation_id,
+                uploader_id=uploader_id,
+                stored_filename=stored_filename,
+                original_filename=safe_filename,
+                mime_type=mime_type,
+                file_extension=extension,
+                file_size=file_size,
+                checksum_sha256=checksum,
+                encryption_algorithm=encryption_algorithm,
+                nonce=nonce,
+                authentication_tag=authentication_tag,
+                encrypted_size=file_size,
+            )
+            db.add(attachment)
+            db.commit()
+            db.refresh(attachment)
+            log_upload_success(
+                str(uploader_id), str(attachment.id), str(conversation_id),
+                safe_filename, file_size,
+            )
+            return attachment
 
         # Step 7: Detect MIME type via magic bytes
         mime_type = AttachmentService.detect_mime_type(content)
@@ -717,6 +774,10 @@ async def upload_attachment(
     uploader_id: uuid.UUID,
     file: UploadFile,
     original_filename: str,
+    encryption_algorithm: Optional[str] = None,
+    declared_mime_type: Optional[str] = None,
+    nonce: Optional[str] = None,
+    authentication_tag: Optional[str] = None,
 ) -> Attachment:
     """Convenience function to upload an attachment."""
     return await AttachmentService.upload_attachment(
@@ -725,6 +786,10 @@ async def upload_attachment(
         uploader_id=uploader_id,
         file=file,
         original_filename=original_filename,
+        encryption_algorithm=encryption_algorithm,
+        declared_mime_type=declared_mime_type,
+        nonce=nonce,
+        authentication_tag=authentication_tag,
     )
 
 

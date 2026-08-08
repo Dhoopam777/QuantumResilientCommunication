@@ -3,12 +3,20 @@ import IconButton from '../common/IconButton'
 
 export default function MessageComposer({ onSend, disabled = false, replyTo = null, onCancelReply }) {
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState([])
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!content.trim() || disabled) return
-    onSend(content, replyTo)
-    setContent('')
+    if ((!content.trim() && files.length === 0) || disabled) return
+    setError('')
+    try {
+      await onSend(content, replyTo, files)
+      setContent('')
+      setFiles([])
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Unable to send message')
+    }
   }
 
   return (
@@ -42,10 +50,17 @@ export default function MessageComposer({ onSend, disabled = false, replyTo = nu
           😀
         </IconButton>
 
-        {/* Attachment button (placeholder) */}
-        <IconButton label="Attach file" disabled title="File sharing coming soon">
-          📎
-        </IconButton>
+        <label className="icon-btn cursor-pointer" title="Attach encrypted image">
+          <span aria-hidden="true">📎</span>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            className="hidden"
+            disabled={disabled}
+            onChange={(event) => setFiles(Array.from(event.target.files || []))}
+          />
+        </label>
 
         {/* Voice message button (placeholder) */}
         <IconButton label="Voice message" disabled title="Voice messages coming soon">
@@ -73,12 +88,18 @@ export default function MessageComposer({ onSend, disabled = false, replyTo = nu
         <button
           type="submit"
           className="btn-primary !px-3 !py-2"
-          disabled={!content.trim() || disabled}
+          disabled={(!content.trim() && files.length === 0) || disabled}
           aria-label="Send message"
         >
           ➤
         </button>
       </div>
+      {files.length > 0 && (
+        <div className="text-xs text-text-muted truncate">
+          {files.map((file) => file.name).join(', ')}
+        </div>
+      )}
+      {error && <div className="text-xs text-danger" role="alert">{error}</div>}
     </form>
   )
 }

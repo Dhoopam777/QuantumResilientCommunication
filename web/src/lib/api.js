@@ -17,7 +17,8 @@ export const clearLastConversationId = () => localStorage.removeItem('qrc_last_c
 export const setOnAuthFailure = (handler) => { authFailureHandler = handler }
 
 async function request(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const isFormData = options.body instanceof FormData
+  const headers = { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) }
   const token = getAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
@@ -81,4 +82,16 @@ export const messageApi = {
   delete: (id, mode) => request(`/messages/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ mode }) }),
   toggleReaction: (id, emoji) => request(`/messages/${encodeURIComponent(id)}/reactions`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   removeReaction: (id, emoji) => request(`/messages/${encodeURIComponent(id)}/reactions`, { method: 'DELETE', body: JSON.stringify({ emoji }) }),
+}
+
+export const attachmentApi = {
+  upload: async (formData) => request('/attachments/upload', { method: 'POST', body: formData }),
+  download: async (id) => {
+    const token = getAccessToken()
+    const response = await fetch(`${API_BASE}/attachments/${encodeURIComponent(id)}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    return { status: response.status, blob: response.ok ? await response.blob() : null }
+  },
+  delete: (id) => request(`/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }

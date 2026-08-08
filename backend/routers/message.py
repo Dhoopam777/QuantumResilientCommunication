@@ -98,6 +98,10 @@ def _serialize_message(
                 "checksum_sha256": attachment.checksum_sha256,
                 "width": attachment.width,
                 "height": attachment.height,
+                "encryption_algorithm": attachment.encryption_algorithm,
+                "nonce": attachment.nonce,
+                "authentication_tag": attachment.authentication_tag,
+                "encrypted_size": attachment.encrypted_size,
             }
             for attachment in db.query(Attachment)
             .filter(Attachment.message_id == message.id, Attachment.is_deleted.is_(False))
@@ -155,6 +159,22 @@ def _serialize_message(
         encryption_version=message.encryption_version,
         nonce=message.nonce,
         authentication_tag=message.authentication_tag,
+        attachments=[
+            {
+                "id": attachment.id,
+                "original_filename": attachment.original_filename,
+                "mime_type": attachment.mime_type,
+                "file_extension": attachment.file_extension,
+                "file_size": attachment.file_size,
+                "encryption_algorithm": attachment.encryption_algorithm,
+                "nonce": attachment.nonce,
+                "authentication_tag": attachment.authentication_tag,
+                "encrypted_size": attachment.encrypted_size,
+                "created_at": attachment.created_at,
+            }
+            for attachment in message.attachments
+            if not attachment.is_deleted
+        ],
     )
 
 

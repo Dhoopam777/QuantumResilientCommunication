@@ -5,6 +5,7 @@ import {
   groupApi,
   messageApi,
   cryptoApi,
+  attachmentApi,
   getAccessToken,
   getLastConversationId,
   setLastConversationId,
@@ -16,6 +17,8 @@ import {
   encryptMessage,
   decryptMessage,
   signMessage,
+  encryptBytes,
+  decryptBytes,
 } from '../lib/pqc'
 import { WebSocketClient } from '../lib/websocket'
 import { useAuth } from '../context/AuthContext'
@@ -44,6 +47,37 @@ export default function ChatPage() {
   const wsTokenRef = useRef('')
   const sessionKeyRef = useRef(null)
 
+  const decryptMessagePayload = useCallback(async (message) => {
+    if (!message.nonce || !message.authentication_tag || !sessionKeyRef.current) return message
+    try {
+      const content = await decryptMessage(
+        sessionKeyRef.current,
+        message.content_encrypted,
+        message.nonce,
+        message.authentication_tag,
+      )
+      const attachments = await Promise.all((message.attachments || []).map(async (attachment) => {
+        if (!attachment.encryption_algorithm) return attachment
+        const response = await attachmentApi.download(attachment.id)
+        if (response.status !== 200 || !response.blob) throw new Error('Attachment download failed')
+        const encryptedBytes = new Uint8Array(await response.blob.arrayBuffer())
+        const plaintext = await decryptBytes(
+          sessionKeyRef.current,
+          encryptedBytes,
+          attachment.nonce,
+          attachment.authentication_tag,
+        )
+        return {
+          ...attachment,
+          local_url: URL.createObjectURL(new Blob([plaintext], { type: attachment.mime_type })),
+        }
+      }))
+      return { ...message, content_encrypted: content, attachments }
+    } catch {
+      return { ...message, content_encrypted: 'Unable to decrypt message.', attachments: [] }
+    }
+  }, [])
+
   const fetchConversation = useCallback(async () => {
     if (!conversationId) return
     const res = await conversationApi.get(conversationId)
@@ -56,26 +90,13 @@ export default function ChatPage() {
     if (!conversationId) return
     const res = await messageApi.list(conversationId)
     if (res.status === 200 && Array.isArray(res.data)) {
-      const decrypted = await Promise.all(res.data.map(async (message) => {
-        if (!message.nonce || !message.authentication_tag || !sessionKeyRef.current) return message
-        try {
-          const content = await decryptMessage(
-            sessionKeyRef.current,
-            message.content_encrypted,
-            message.nonce,
-            message.authentication_tag,
-          )
-          return { ...message, content_encrypted: content }
-        } catch {
-          return { ...message, content_encrypted: 'Unable to decrypt message.' }
-        }
-      }))
+      const decrypted = await Promise.all(res.data.map(decryptMessagePayload))
       setMessages(decrypted)
       res.data.forEach((m) => {
         if (m.id) seenMessageIdsRef.current.add(m.id)
       })
     }
-  }, [conversationId])
+  }, [conversationId, decryptMessagePayload])
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -134,9 +155,8 @@ export default function ChatPage() {
       if (!seenMessageIdsRef.current.has(msg.id)) {
         seenMessageIdsRef.current.add(msg.id)
         if (msg.nonce && msg.authentication_tag && sessionKeyRef.current) {
-          decryptMessage(sessionKeyRef.current, msg.content_encrypted, msg.nonce, msg.authentication_tag)
-            .then((content) => setWsMessages((prev) => [...prev, { ...msg, content_encrypted: content }]))
-            .catch(() => setWsMessages((prev) => [...prev, { ...msg, content_encrypted: 'Unable to decrypt message.' }]))
+          decryptMessagePayload(msg)
+            .then((decrypted) => setWsMessages((prev) => [...prev, decrypted]))
         } else {
           setWsMessages((prev) => [...prev, msg])
         }
@@ -348,21 +368,84 @@ export default function ChatPage() {
     }
   }
 
-  const handleSend = async (content, replyTarget = null) => {
-    if (!conversationId || !content.trim()) return
+  const validateAttachment = async (file) => {
+    const allowed = {
+      'image/png': '.png',
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/webp': '.webp',
+    }
+    const expectedExtension = allowed[file.type]
+    const extension = `.${file.name.split('.').pop().toLowerCase()}`
+    if (!expectedExtension || (!Array.isArray(expectedExtension)
+      ? extension !== expectedExtension
+      : !expectedExtension.includes(extension))) {
+      throw new Error('Only PNG, JPEG, and WebP images are supported')
+    }
+    if (file.size <= 0 || file.size + 16 > 10 * 1024 * 1024) {
+      throw new Error('Attachment exceeds the maximum encrypted size')
+    }
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      await new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = resolve
+        image.onerror = () => reject(new Error('Image could not be decoded'))
+        image.src = objectUrl
+      })
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+
+  const uploadEncryptedAttachments = async (files, key, conversationId) => {
+    const uploaded = []
+    for (const file of files) {
+      await validateAttachment(file)
+      const encrypted = await encryptBytes(key, new Uint8Array(await file.arrayBuffer()))
+      const formData = new FormData()
+      formData.append('conversation_id', conversationId)
+      formData.append('file', new File([encrypted.ciphertext], file.name, { type: 'application/octet-stream' }))
+      formData.append('encryption_algorithm', 'AES-256-GCM')
+      formData.append('declared_mime_type', file.type)
+      formData.append('nonce', encrypted.nonce)
+      formData.append('authentication_tag', encrypted.tag)
+      const response = await attachmentApi.upload(formData)
+      if (response.status !== 201) throw new Error(response.data?.detail || 'Attachment upload failed')
+      uploaded.push(response.data)
+    }
+    return uploaded
+  }
+
+  const handleSend = async (content, replyTarget = null, files = []) => {
+    if (!conversationId || (!content.trim() && files.length === 0)) return
     const key = await ensureSession()
     if (!key) throw new Error('Secure session unavailable')
-    const encrypted = await encryptMessage(key, content)
-    const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
-    const signature = await signMessage({
+    const uploadedAttachments = await uploadEncryptedAttachments(files, key, conversationId)
+    try {
+      const messageContent = content.trim() || 'Attachment'
+      const encrypted = await encryptMessage(key, messageContent)
+      const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
+      const signature = await signMessage({
       conversation_id: conversationId,
       sender_id: user.id,
       message_type: 'text',
       content_encrypted: encrypted.ciphertext,
-      attachments: [],
+      attachments: uploadedAttachments.map((attachment) => ({
+        id: attachment.id,
+        original_filename: attachment.original_filename,
+        mime_type: attachment.mime_type,
+        file_size: attachment.file_size,
+        checksum_sha256: attachment.checksum_sha256,
+        width: attachment.width,
+        height: attachment.height,
+        encryption_algorithm: attachment.encryption_algorithm,
+        nonce: attachment.nonce,
+        authentication_tag: attachment.authentication_tag,
+        encrypted_size: attachment.encrypted_size,
+      })),
       timestamp: signature_created_at,
-    })
-    const payload = {
+      })
+      const payload = {
       conversation_id: conversationId,
       content_encrypted: encrypted.ciphertext,
       content_hash: encrypted.ciphertext,
@@ -374,11 +457,18 @@ export default function ChatPage() {
       message_type: 'text',
       reply_to: replyTarget ? replyTarget.id : null,
       reply_to_message_id: replyTarget ? replyTarget.id : null,
-    }
-    const res = await messageApi.send(payload)
-    if (res.status === 201) {
+      attachment_ids: uploadedAttachments.map((attachment) => attachment.id),
+      }
+      const res = await messageApi.send(payload)
+      if (res.status !== 201) throw new Error(res.data?.detail || 'Unable to send message')
       // WebSocket broadcast is the single source of truth for new messages
       setReplyTo(null)
+    } catch (error) {
+      await Promise.all(uploadedAttachments.map(async (attachment) => {
+        const cleanup = await attachmentApi.delete(attachment.id)
+        if (cleanup.status >= 300) throw new Error('Message failed and attachment cleanup failed')
+      }))
+      throw error
     }
   }
 

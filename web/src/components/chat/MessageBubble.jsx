@@ -266,6 +266,23 @@ export default function MessageBubble({
         ) : (
           <>
             <div className="break-words">{message.content_encrypted}</div>
+            {message.attachments?.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {message.attachments.map((attachment) => (
+                  <div key={attachment.id} className="rounded border border-white/20 p-1">
+                    {attachment.local_url && attachment.mime_type?.startsWith('image/') ? (
+                      <img
+                        src={attachment.local_url}
+                        alt={attachment.original_filename}
+                        className="max-h-64 max-w-full rounded object-contain"
+                      />
+                    ) : (
+                      <span className="text-xs">{attachment.original_filename}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className={`flex items-center gap-1 mt-1 text-[10px] ${isOutgoing ? 'text-white/70' : 'text-text-muted'}`}>
               <span>{time}</span>
               {message.is_edited && (

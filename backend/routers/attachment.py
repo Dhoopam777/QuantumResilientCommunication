@@ -55,6 +55,10 @@ router = APIRouter(
 async def upload_attachment(
     conversation_id: uuid.UUID = Form(..., description="Conversation ID"),
     file: UploadFile = File(..., description="File to upload"),
+    encryption_algorithm: str | None = Form(None),
+    declared_mime_type: str | None = Form(None),
+    nonce: str | None = Form(None),
+    authentication_tag: str | None = Form(None),
     current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> AttachmentUploadResponse:
@@ -77,11 +81,15 @@ async def upload_attachment(
         uploader_id=current_user.id,
         file=file,
         original_filename=file.filename or "upload",
+        encryption_algorithm=encryption_algorithm,
+        declared_mime_type=declared_mime_type,
+        nonce=nonce,
+        authentication_tag=authentication_tag,
     )
 
     response = AttachmentUploadResponse.model_validate(attachment)
     # Build thumbnail URL — relative API path, never filesystem path
-    if attachment.thumbnail_filename:
+    if attachment.thumbnail_filename and not attachment.encryption_algorithm:
         response.thumbnail_url = f"/api/v1/attachments/{attachment.id}/thumbnail"
     return response
 
@@ -108,7 +116,7 @@ def get_attachment_metadata(
     attachment = AttachmentService.get_attachment(db, attachment_id, current_user.id)
 
     response = AttachmentResponse.model_validate(attachment)
-    if attachment.thumbnail_filename:
+    if attachment.thumbnail_filename and not attachment.encryption_algorithm:
         response.thumbnail_url = f"/api/v1/attachments/{attachment.id}/thumbnail"
     return response
 
@@ -197,7 +205,7 @@ def download_thumbnail(
     """
     attachment = AttachmentService.get_attachment(db, attachment_id, current_user.id)
 
-    if not attachment.thumbnail_filename:
+    if attachment.encryption_algorithm or not attachment.thumbnail_filename:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No thumbnail available for this attachment",

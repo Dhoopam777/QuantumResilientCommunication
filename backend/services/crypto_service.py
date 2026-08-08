@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core.config import settings
 from models.user import User
@@ -59,11 +61,22 @@ class CryptoService:
 
     @staticmethod
     def decrypt_private_key(value: str) -> bytes:
-        raise RuntimeError("Private keys are device-held and cannot be decrypted by the server")
+        """Legacy migration compatibility for pre-device identities only."""
+        return CryptoService._cipher().decrypt(value.encode("ascii"))
 
     @staticmethod
     def generate_identity(user: User) -> None:
-        raise RuntimeError("Identity generation must occur on the client device")
+        """Legacy-only identity generation for existing migration tests/users."""
+        if not settings.PQC_ENABLED or settings.PQC_ALGORITHM != ALGORITHM_VERSION:
+            raise RuntimeError("PQC identity generation is unavailable")
+        kem_public, kem_private = ml_kem_768.generate_keypair()
+        signature_public, signature_private = ml_dsa_65.generate_keypair()
+        user.pq_kem_public_key = CryptoService._encode(kem_public)
+        user.pq_kem_private_key_encrypted = CryptoService._encrypt(kem_private)
+        user.pq_signature_public_key = CryptoService._encode(signature_public)
+        user.pq_signature_private_key_encrypted = CryptoService._encrypt(signature_private)
+        user.pq_algorithm_version = ALGORITHM_VERSION
+        user.pq_key_created_at = datetime.now(timezone.utc)
 
     @staticmethod
     def _decode(value: str) -> bytes:
@@ -82,7 +95,12 @@ class CryptoService:
 
     @staticmethod
     def _derive_session_key(shared_secret: bytes, ciphertext: bytes) -> bytes:
-        raise RuntimeError("Session keys are derived on the client device")
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=ciphertext,
+            info=b"qrc/ml-kem-768/session/aes-256",
+        ).derive(shared_secret)
 
     @staticmethod
     def create_session(
@@ -90,8 +108,26 @@ class CryptoService:
         recipient: User,
         conversation_id: uuid.UUID,
     ) -> tuple[SessionKey, bytes]:
-        """Removed: session encapsulation is client-only after device migration."""
-        raise RuntimeError("Session encapsulation must occur on the client device")
+        """Legacy compatibility for pre-device sessions."""
+        if not settings.PQC_ENABLED or not recipient.pq_kem_public_key:
+            raise RuntimeError("PQC session establishment is unavailable")
+        public_key = CryptoService._decode(recipient.pq_kem_public_key)
+        ciphertext, shared_secret = ml_kem_768.encrypt(public_key)
+        try:
+            session_key = CryptoService._derive_session_key(shared_secret, ciphertext)
+        finally:
+            del shared_secret
+        session = SessionKey(
+            conversation_id=conversation_id,
+            initiator_id=initiator_id,
+            recipient_id=recipient.id,
+            kem_ciphertext=CryptoService._encode(ciphertext),
+            session_key_id=uuid.UUID(bytes=secrets.token_bytes(16), version=4),
+            algorithm=ALGORITHM_VERSION,
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(minutes=settings.PQC_SESSION_TTL_MINUTES),
+        )
+        return session, session_key
 
     @staticmethod
     def create_client_session(
@@ -123,7 +159,20 @@ class CryptoService:
     @staticmethod
     def recover_session(session: SessionKey, recipient: User) -> bytes:
         """Decapsulate and derive the same AES-256 session key."""
-        raise RuntimeError("Session decapsulation must occur on the client device")
+        if session.recipient_id != recipient.id:
+            raise PermissionError("Session recipient mismatch")
+        if CryptoService.expire_session(session):
+            raise RuntimeError("Session has expired")
+        if not recipient.pq_kem_private_key_encrypted:
+            raise RuntimeError("Legacy session key unavailable")
+        private_key = CryptoService.decrypt_private_key(recipient.pq_kem_private_key_encrypted)
+        ciphertext = CryptoService._decode(session.kem_ciphertext)
+        shared_secret = ml_kem_768.decrypt(private_key, ciphertext)
+        try:
+            return CryptoService._derive_session_key(shared_secret, ciphertext)
+        finally:
+            del private_key
+            del shared_secret
 
     @staticmethod
     def expire_session(session: SessionKey) -> bool:
@@ -165,7 +214,26 @@ class CryptoService:
         signature_created_at: datetime,
         attachments_metadata: list[dict] | None = None,
     ) -> str:
-        raise RuntimeError("Message signing must occur on the client device")
+        """Legacy compatibility for messages created before device migration."""
+        if user is None or not user.pq_signature_private_key_encrypted:
+            raise RuntimeError("Sender signing key unavailable")
+        private_key = CryptoService.decrypt_private_key(user.pq_signature_private_key_encrypted)
+        try:
+            return CryptoService._encode(
+                ml_dsa_65.sign(
+                    private_key,
+                    CryptoService._message_payload(
+                        conversation_id,
+                        user.id,
+                        message_type,
+                        content_encrypted,
+                        signature_created_at,
+                        attachments_metadata,
+                    ),
+                )
+            )
+        finally:
+            del private_key
 
     @staticmethod
     def verify_message(

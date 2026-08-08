@@ -32,6 +32,10 @@ class AttachmentResponse(BaseModel):
     height: Optional[int] = None
     thumbnail_url: Optional[str] = None  # relative API path
     created_at: datetime
+    encryption_algorithm: Optional[str] = None
+    nonce: Optional[str] = None
+    authentication_tag: Optional[str] = None
+    encrypted_size: Optional[int] = None
 
 
 class AttachmentUploadResponse(AttachmentResponse):

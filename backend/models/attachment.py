@@ -127,6 +127,11 @@ class Attachment(Base, TimestampMixin):
         comment="UUIDv4-based thumbnail filename on disk"
     )
 
+    encryption_algorithm: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    nonce: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    authentication_tag: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    encrypted_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
