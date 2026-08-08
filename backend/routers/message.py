@@ -152,6 +152,9 @@ def _serialize_message(
             else []
         ),
         signature_status=signature_status,
+        encryption_version=message.encryption_version,
+        nonce=message.nonce,
+        authentication_tag=message.authentication_tag,
     )
 
 
@@ -205,6 +208,11 @@ async def send_message_endpoint(
             reply_to=message_create.reply_to,
             reply_to_message_id=message_create.reply_to_message_id,
             attachment_ids=message_create.attachment_ids,
+            encryption_version=message_create.encryption_version,
+            nonce=message_create.nonce,
+            authentication_tag=message_create.authentication_tag,
+            signature=message_create.signature,
+            signature_created_at=message_create.signature_created_at,
         )
         if message.signature:
             log_message_signature_event(
@@ -327,6 +335,11 @@ async def edit_message_endpoint(
             user_id=current_user.id,
             content_encrypted=message_edit.content_encrypted,
             content_hash=message_edit.content_hash,
+            encryption_version=message_edit.encryption_version,
+            nonce=message_edit.nonce,
+            authentication_tag=message_edit.authentication_tag,
+            signature=message_edit.signature,
+            signature_created_at=message_edit.signature_created_at,
         )
 
         # Audit log successful edit

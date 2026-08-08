@@ -17,8 +17,8 @@ from models.conversation import Conversation
 from models.conversation_participant import ConversationParticipant
 from models.session_key import SessionKey
 from models.user import User
-from schemas.crypto import PublicKeyResponse
-from schemas.session import SessionCreatedResponse, SessionMetadataResponse
+from schemas.crypto import DevicePublicKeyUpdate, PublicKeyResponse
+from schemas.session import SessionCreateRequest, SessionCreatedResponse, SessionMetadataResponse
 from services.crypto_service import ALGORITHM_VERSION, CryptoService
 from services.user_service import get_user_by_username
 
@@ -82,6 +82,7 @@ def get_public_key(
 )
 def establish_session(
     username: str,
+    request: SessionCreateRequest,
     current_user: User = Depends(require_verified_user),
     db: Session = Depends(get_db),
 ) -> SessionCreatedResponse:
@@ -98,7 +99,6 @@ def establish_session(
         or recipient.id == current_user.id
         or not recipient.is_active
         or not recipient.pq_kem_public_key
-        or not recipient.pq_kem_private_key_encrypted
     ):
         log_session_event("SESSION_FAILED", str(current_user.id), reason="recipient unavailable")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session unavailable")
@@ -109,8 +109,8 @@ def establish_session(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Conversation access denied")
 
     try:
-        session, _derived_key = CryptoService.create_session(
-            current_user.id, recipient, conversation.id
+        session = CryptoService.create_client_session(
+            current_user.id, recipient, conversation.id, request.kem_ciphertext
         )
         db.add(session)
         db.commit()
@@ -123,10 +123,6 @@ def establish_session(
         db.rollback()
         log_session_event("SESSION_FAILED", str(current_user.id), reason="session persistence failed")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Session unavailable") from exc
-    finally:
-        if "_derived_key" in locals():
-            del _derived_key
-
     log_session_event(
         "SESSION_CREATED",
         str(current_user.id),
@@ -138,6 +134,31 @@ def establish_session(
         algorithm=session.algorithm,
         expires_at=session.expires_at,
     )
+
+
+@router.put("/device-keys", status_code=status.HTTP_204_NO_CONTENT)
+def upload_device_keys(
+    request: DevicePublicKeyUpdate,
+    current_user: User = Depends(require_verified_user),
+    db: Session = Depends(get_db),
+) -> None:
+    if request.algorithm_version != ALGORITHM_VERSION:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported algorithm")
+    try:
+        CryptoService.validate_public_keys(
+            request.kem_public_key, request.signature_public_key
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid public key") from exc
+    current_user.pq_kem_public_key = request.kem_public_key
+    current_user.pq_signature_public_key = request.signature_public_key
+    current_user.pq_algorithm_version = request.algorithm_version
+    current_user.pq_key_created_at = datetime.now(timezone.utc)
+    # Device ownership is the source of truth after migration. Legacy encrypted
+    # server keys are removed so the backend cannot continue using private keys.
+    current_user.pq_kem_private_key_encrypted = None
+    current_user.pq_signature_private_key_encrypted = None
+    db.commit()
 
 
 @router.get("/sessions", response_model=list[SessionMetadataResponse])
@@ -171,4 +192,7 @@ def _session_metadata(user: User, session: SessionKey) -> SessionMetadataRespons
         created_at=session.created_at,
         expires_at=session.expires_at,
         status="expired" if expired else "active",
+        session_id=session.id,
+        conversation_id=session.conversation_id,
+        kem_ciphertext=session.kem_ciphertext,
     )

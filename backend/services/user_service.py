@@ -108,7 +108,6 @@ class UserService:
         db.add(db_user)
 
         try:
-            CryptoService.generate_identity(db_user)
             db.commit()
             db.refresh(db_user)
             return db_user

@@ -42,7 +42,8 @@ export const profileApi = {
 
 export const cryptoApi = {
   publicKey: (username) => request(`/crypto/public-key/${encodeURIComponent(username)}`),
-  establishSession: (username) => request(`/crypto/session/${encodeURIComponent(username)}`, { method: 'POST' }),
+  uploadDeviceKeys: (payload) => request('/crypto/device-keys', { method: 'PUT', body: JSON.stringify(payload) }),
+  establishSession: (username, payload) => request(`/crypto/session/${encodeURIComponent(username)}`, { method: 'POST', body: JSON.stringify(payload) }),
   sessions: () => request('/crypto/sessions'),
 }
 

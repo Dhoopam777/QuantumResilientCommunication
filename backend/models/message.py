@@ -130,6 +130,9 @@ class Message(Base, TimestampMixin):
     signature_created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    encryption_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    nonce: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    authentication_tag: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     # Relationships
     conversation: Mapped["Conversation"] = relationship(

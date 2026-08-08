@@ -22,6 +22,11 @@ class MessageCreate(BaseModel):
     reply_to: Optional[uuid.UUID] = None
     reply_to_message_id: Optional[uuid.UUID] = None
     attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    encryption_version: Optional[str] = Field(default=None, max_length=32)
+    nonce: Optional[str] = Field(default=None, min_length=16, max_length=64)
+    authentication_tag: Optional[str] = Field(default=None, min_length=16, max_length=64)
+    signature: Optional[str] = Field(default=None, max_length=8192)
+    signature_created_at: Optional[datetime] = None
 
 
 class MessageEdit(BaseModel):
@@ -44,6 +49,11 @@ class MessageEdit(BaseModel):
         max_length=255,
         description="SHA-256 hash for integrity verification",
     )
+    encryption_version: Optional[str] = Field(default=None, max_length=32)
+    nonce: Optional[str] = Field(default=None, min_length=16, max_length=64)
+    authentication_tag: Optional[str] = Field(default=None, min_length=16, max_length=64)
+    signature: Optional[str] = Field(default=None, max_length=8192)
+    signature_created_at: Optional[datetime] = None
 
 
 class MessageDelete(BaseModel):
@@ -122,3 +132,6 @@ class MessageResponse(BaseModel):
     updated_at: datetime
     reactions: list[ReactionSummary] = Field(default_factory=list)
     signature_status: str = "unverified"
+    encryption_version: Optional[str] = None
+    nonce: Optional[str] = None
+    authentication_tag: Optional[str] = None

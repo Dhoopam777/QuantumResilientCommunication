@@ -5,6 +5,7 @@ This module provides business logic for message operations.
 """
 
 import uuid
+import base64
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -24,6 +25,24 @@ class MessageService:
     """Service class for message-related operations."""
 
     VALID_MESSAGE_TYPES = {"text", "image", "file", "audio", "system"}
+
+    @staticmethod
+    def _validate_envelope(
+        encryption_version: Optional[str],
+        nonce: Optional[str],
+        authentication_tag: Optional[str],
+    ) -> None:
+        if not encryption_version:
+            return
+        if encryption_version != "AES-256-GCM" or not nonce or not authentication_tag:
+            raise ValueError("Invalid encryption envelope")
+        try:
+            if len(base64.b64decode(nonce, validate=True)) != 12:
+                raise ValueError("Invalid nonce")
+            if len(base64.b64decode(authentication_tag, validate=True)) != 16:
+                raise ValueError("Invalid authentication tag")
+        except (ValueError, base64.binascii.Error) as exc:
+            raise ValueError("Invalid encryption envelope") from exc
 
     @staticmethod
     def _validate_reply_target(
@@ -82,6 +101,11 @@ class MessageService:
         reply_to_message_id: Optional[uuid.UUID] = None,
         attachment_ids: Optional[list[uuid.UUID]] = None,
         attachments_metadata: Optional[list[dict]] = None,
+        encryption_version: Optional[str] = None,
+        nonce: Optional[str] = None,
+        authentication_tag: Optional[str] = None,
+        signature: Optional[str] = None,
+        signature_created_at: Optional[datetime] = None,
     ) -> Message:
         """
         Send a message in a conversation.
@@ -117,6 +141,7 @@ class MessageService:
 
         if not content_hash or not content_hash.strip():
             raise ValueError("Content hash cannot be empty")
+        MessageService._validate_envelope(encryption_version, nonce, authentication_tag)
 
         if message_type not in MessageService.VALID_MESSAGE_TYPES:
             raise ValueError(
@@ -131,7 +156,7 @@ class MessageService:
         # Validate reply target (if any)
         MessageService._validate_reply_target(db, conversation_id, reply_to_message_id)
 
-        signature_created_at = datetime.now(timezone.utc)
+        signature_created_at = signature_created_at or datetime.now(timezone.utc)
         sender = db.query(User).filter(User.id == sender_id).first()
         attachments = []
         if attachment_ids:
@@ -160,9 +185,10 @@ class MessageService:
                 }
                 for attachment in attachments
             ]
-        signature = None
+        client_signature = signature
+        signature = client_signature
         signature_algorithm = None
-        if settings.PQC_ENABLED:
+        if settings.PQC_ENABLED and not signature:
             if sender is None:
                 raise ValueError("Message authentication failed")
             try:
@@ -189,6 +215,9 @@ class MessageService:
             signature=signature,
             signature_algorithm="ML-DSA-65" if signature else None,
             signature_created_at=signature_created_at if signature else None,
+            encryption_version=encryption_version,
+            nonce=nonce,
+            authentication_tag=authentication_tag,
         )
         db.add(message)
         db.flush()
@@ -216,6 +245,11 @@ class MessageService:
         user_id: uuid.UUID,
         content_encrypted: str,
         content_hash: str,
+        encryption_version: Optional[str] = None,
+        nonce: Optional[str] = None,
+        authentication_tag: Optional[str] = None,
+        signature: Optional[str] = None,
+        signature_created_at: Optional[datetime] = None,
     ) -> Message:
         """
         Edit a message's text content.
@@ -254,6 +288,7 @@ class MessageService:
 
         if not content_hash or not content_hash.strip():
             raise ValueError("Content hash cannot be empty")
+        MessageService._validate_envelope(encryption_version, nonce, authentication_tag)
 
         # Load the message
         message = db.query(Message).filter(Message.id == message_id).first()
@@ -279,7 +314,7 @@ class MessageService:
         # Update only the text content fields
         message.content_encrypted = content_encrypted
         message.content_hash = content_hash
-        if settings.PQC_ENABLED:
+        if settings.PQC_ENABLED and not signature:
             sender = db.query(User).filter(User.id == user_id).first()
             try:
                 signature_created_at = datetime.now(timezone.utc)
@@ -294,6 +329,13 @@ class MessageService:
                 message.signature_created_at = signature_created_at
             except (RuntimeError, ValueError):
                 raise ValueError("Message authentication failed")
+        elif signature:
+            message.signature = signature
+            message.signature_algorithm = "ML-DSA-65"
+            message.signature_created_at = signature_created_at or datetime.now(timezone.utc)
+        message.encryption_version = encryption_version
+        message.nonce = nonce
+        message.authentication_tag = authentication_tag
         message.is_edited = True
         message.edited_at = datetime.now(timezone.utc)
 
@@ -486,6 +528,11 @@ def send_message(
     reply_to: Optional[uuid.UUID] = None,
     reply_to_message_id: Optional[uuid.UUID] = None,
     attachment_ids: Optional[list[uuid.UUID]] = None,
+    encryption_version: Optional[str] = None,
+    nonce: Optional[str] = None,
+    authentication_tag: Optional[str] = None,
+    signature: Optional[str] = None,
+    signature_created_at: Optional[datetime] = None,
 ) -> Message:
     """Convenience function to send a message."""
     return MessageService.send_message(
@@ -498,6 +545,11 @@ def send_message(
         reply_to=reply_to,
         reply_to_message_id=reply_to_message_id,
         attachment_ids=attachment_ids,
+        encryption_version=encryption_version,
+        nonce=nonce,
+        authentication_tag=authentication_tag,
+        signature=signature,
+        signature_created_at=signature_created_at,
     )
 
 
@@ -507,6 +559,11 @@ def edit_message(
     user_id: uuid.UUID,
     content_encrypted: str,
     content_hash: str,
+    encryption_version: Optional[str] = None,
+    nonce: Optional[str] = None,
+    authentication_tag: Optional[str] = None,
+    signature: Optional[str] = None,
+    signature_created_at: Optional[datetime] = None,
 ) -> Message:
     """Convenience function to edit a message."""
     return MessageService.edit_message(
@@ -515,6 +572,11 @@ def edit_message(
         user_id=user_id,
         content_encrypted=content_encrypted,
         content_hash=content_hash,
+        encryption_version=encryption_version,
+        nonce=nonce,
+        authentication_tag=authentication_tag,
+        signature=signature,
+        signature_created_at=signature_created_at,
     )
 
 

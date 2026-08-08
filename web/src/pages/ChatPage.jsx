@@ -4,10 +4,19 @@ import {
   conversationApi,
   groupApi,
   messageApi,
+  cryptoApi,
   getAccessToken,
   getLastConversationId,
   setLastConversationId,
 } from '../lib/api'
+import {
+  ensureDeviceIdentity,
+  establishClientSession,
+  restoreSession,
+  encryptMessage,
+  decryptMessage,
+  signMessage,
+} from '../lib/pqc'
 import { WebSocketClient } from '../lib/websocket'
 import { useAuth } from '../context/AuthContext'
 import ChatLayout from '../components/chat/ChatLayout'
@@ -33,6 +42,7 @@ export default function ChatPage() {
   const wsClientRef = useRef(null)
   const seenMessageIdsRef = useRef(new Set())
   const wsTokenRef = useRef('')
+  const sessionKeyRef = useRef(null)
 
   const fetchConversation = useCallback(async () => {
     if (!conversationId) return
@@ -46,12 +56,48 @@ export default function ChatPage() {
     if (!conversationId) return
     const res = await messageApi.list(conversationId)
     if (res.status === 200 && Array.isArray(res.data)) {
-      setMessages(res.data)
+      const decrypted = await Promise.all(res.data.map(async (message) => {
+        if (!message.nonce || !message.authentication_tag || !sessionKeyRef.current) return message
+        try {
+          const content = await decryptMessage(
+            sessionKeyRef.current,
+            message.content_encrypted,
+            message.nonce,
+            message.authentication_tag,
+          )
+          return { ...message, content_encrypted: content }
+        } catch {
+          return { ...message, content_encrypted: 'Unable to decrypt message.' }
+        }
+      }))
+      setMessages(decrypted)
       res.data.forEach((m) => {
         if (m.id) seenMessageIdsRef.current.add(m.id)
       })
     }
   }, [conversationId])
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      ensureDeviceIdentity().catch(() => {
+        console.error('Device key migration failed')
+      })
+    }
+  }, [isLoggedIn])
+
+  const ensureSession = useCallback(async () => {
+    if (sessionKeyRef.current || !conversation?.participants?.length) return sessionKeyRef.current
+    const peer = conversation.participants.find((participant) => participant.user_id !== user?.id)
+    if (!peer) return null
+    const sessions = await cryptoApi.sessions()
+    const existing = sessions.status === 200
+      ? sessions.data.find((session) => session.conversation_id === conversationId && session.status === 'active')
+      : null
+    sessionKeyRef.current = existing
+      ? await restoreSession(existing)
+      : await establishClientSession(peer.username)
+    return sessionKeyRef.current
+  }, [conversation, conversationId, user?.id])
 
   // Persist the selected conversation for restore after page refresh
   useEffect(() => {
@@ -87,7 +133,13 @@ export default function ChatPage() {
       if (!msg || !msg.id) return
       if (!seenMessageIdsRef.current.has(msg.id)) {
         seenMessageIdsRef.current.add(msg.id)
-        setWsMessages((prev) => [...prev, msg])
+        if (msg.nonce && msg.authentication_tag && sessionKeyRef.current) {
+          decryptMessage(sessionKeyRef.current, msg.content_encrypted, msg.nonce, msg.authentication_tag)
+            .then((content) => setWsMessages((prev) => [...prev, { ...msg, content_encrypted: content }]))
+            .catch(() => setWsMessages((prev) => [...prev, { ...msg, content_encrypted: 'Unable to decrypt message.' }]))
+        } else {
+          setWsMessages((prev) => [...prev, msg])
+        }
       }
     })
 
@@ -195,9 +247,9 @@ export default function ChatPage() {
   useEffect(() => {
     if (isLoggedIn && conversationId) {
       fetchConversation()
-      fetchMessages()
+      ensureSession().finally(fetchMessages)
     }
-  }, [isLoggedIn, conversationId, fetchConversation, fetchMessages])
+  }, [isLoggedIn, conversationId, fetchConversation, fetchMessages, ensureSession])
 
   const handleReply = (message) => {
     setReplyTo(message)
@@ -217,9 +269,25 @@ export default function ChatPage() {
 
   const handleEditMessage = async (message, newContent) => {
     if (!message || !message.id) return
+    const key = await ensureSession()
+    if (!key) throw new Error('Secure session unavailable')
+    const encrypted = await encryptMessage(key, newContent)
+    const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
     const payload = {
-      content_encrypted: newContent,
-      content_hash: btoa(newContent).slice(0, 32),
+      content_encrypted: encrypted.ciphertext,
+      content_hash: encrypted.ciphertext,
+      encryption_version: 'AES-256-GCM',
+      nonce: encrypted.nonce,
+      authentication_tag: encrypted.tag,
+      signature: await signMessage({
+        conversation_id: message.conversation_id,
+        sender_id: user.id,
+        message_type: message.message_type,
+        content_encrypted: encrypted.ciphertext,
+        attachments: [],
+        timestamp: signature_created_at,
+      }),
+      signature_created_at,
     }
     const res = await messageApi.edit(message.id, payload)
     if (res.status === 200 && res.data) {
@@ -282,10 +350,27 @@ export default function ChatPage() {
 
   const handleSend = async (content, replyTarget = null) => {
     if (!conversationId || !content.trim()) return
+    const key = await ensureSession()
+    if (!key) throw new Error('Secure session unavailable')
+    const encrypted = await encryptMessage(key, content)
+    const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
+    const signature = await signMessage({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      message_type: 'text',
+      content_encrypted: encrypted.ciphertext,
+      attachments: [],
+      timestamp: signature_created_at,
+    })
     const payload = {
       conversation_id: conversationId,
-      content_encrypted: content,
-      content_hash: btoa(content).slice(0, 32),
+      content_encrypted: encrypted.ciphertext,
+      content_hash: encrypted.ciphertext,
+      encryption_version: 'AES-256-GCM',
+      nonce: encrypted.nonce,
+      authentication_tag: encrypted.tag,
+      signature,
+      signature_created_at,
       message_type: 'text',
       reply_to: replyTarget ? replyTarget.id : null,
       reply_to_message_id: replyTarget ? replyTarget.id : null,
