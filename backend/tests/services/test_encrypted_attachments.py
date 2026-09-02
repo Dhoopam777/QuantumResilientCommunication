@@ -58,3 +58,27 @@ async def test_encrypted_upload_rejects_invalid_envelope(
             nonce=_b64(11),
             authentication_tag=_b64(16),
         )
+
+
+@pytest.mark.asyncio
+async def test_encrypted_webm_audio_is_stored_as_ciphertext(
+    db_session, test_user, test_conversation, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "ATTACHMENT_STORAGE_PATH", str(tmp_path))
+    ciphertext = b"not-plaintext-webm"
+    upload = UploadFile(filename="voice.webm", file=BytesIO(ciphertext))
+
+    attachment = await AttachmentService.upload_attachment(
+        db=db_session,
+        conversation_id=test_conversation.id,
+        uploader_id=test_user.id,
+        file=upload,
+        original_filename="voice.webm",
+        encryption_algorithm="AES-256-GCM",
+        declared_mime_type="audio/webm",
+        nonce=_b64(12),
+        authentication_tag=_b64(16),
+    )
+
+    assert attachment.mime_type == "audio/webm"
+    assert AttachmentService.get_attachment_bytes(attachment) == ciphertext

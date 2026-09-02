@@ -247,13 +247,13 @@ async def websocket_endpoint(
             })
 
     except WebSocketDisconnect:
-        connection_manager.disconnect(websocket)
         logger.info("WebSocket disconnected normally")
 
     except Exception as e:
         logger.exception("Unexpected WebSocket error: %s", e)
-        connection_manager.disconnect(websocket)
         try:
             await websocket.close(code=WS_CLOSE_SERVER_ERROR)
         except Exception:
             pass
+    finally:
+        connection_manager.disconnect(websocket)

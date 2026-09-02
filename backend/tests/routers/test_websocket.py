@@ -12,6 +12,7 @@ These tests verify the WebSocket endpoint at /ws, including:
 import json
 import uuid
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -173,7 +174,7 @@ class TestWebSocketAuthorization:
             assert join_resp["conversation_id"] == str(test_conversation.id)
 
     def test_join_conversation_as_non_participant(
-        self, client: TestClient, test_user, auth_headers
+        self, client: TestClient, db_session, test_user, test_user2, auth_headers
     ):
         """
         Test that a non-participant is rejected (IDOR prevention).
@@ -184,19 +185,15 @@ class TestWebSocketAuthorization:
         # Create a conversation the test user is NOT a participant of
         from models.conversation import Conversation
         from models.conversation_participant import ConversationParticipant
-        from database.database import override_get_db
 
-        db = next(override_get_db())
-        other_user_id = uuid.uuid4()
-        convo = Conversation(is_group=False, created_by=other_user_id)
-        db.add(convo)
-        db.flush()
+        convo = Conversation(is_group=False, created_by=test_user2.id)
+        db_session.add(convo)
+        db_session.flush()
         participant = ConversationParticipant(
-            conversation_id=convo.id, user_id=other_user_id, role="admin"
+            conversation_id=convo.id, user_id=test_user2.id, role="admin"
         )
-        db.add(participant)
-        db.commit()
-        db.close()
+        db_session.add(participant)
+        db_session.commit()
 
         with client.websocket_connect("/ws") as ws:
             # Authenticate
@@ -418,7 +415,10 @@ class TestWebSocketConnectionLifecycle:
             # Verify subscription exists
             assert connection_manager.get_subscription_count(test_conversation.id) == 1
 
-        # After context exit, connection should be cleaned up
+            ws.close()
+            ws.portal.call(anyio.sleep, 0)
+
+        # After the disconnect event is processed, subscriptions are cleaned up.
         assert connection_manager.get_subscription_count(test_conversation.id) == 0
 
     def test_connection_count_tracking(self, client: TestClient, auth_headers):
@@ -432,5 +432,8 @@ class TestWebSocketConnectionLifecycle:
             ws.send_json({"type": WS_EVENT_AUTH, "token": token})
             ws.receive_json()
             assert connection_manager.get_connection_count() == initial_count + 1
+
+            ws.close()
+            ws.portal.call(anyio.sleep, 0)
 
         assert connection_manager.get_connection_count() == initial_count

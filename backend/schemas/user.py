@@ -103,6 +103,30 @@ class UserLogin(BaseModel):
     password: str
 
 
+class ResendVerificationRequest(BaseModel):
+    """
+    Schema for the public verification email resend request.
+
+    Accepts only the email address — no credentials. The endpoint is public
+    so users who lost their original verification email can recover without
+    signing in (unverified users are intentionally blocked from login).
+    """
+
+    email: EmailStr
+
+
+class ResendVerificationResponse(BaseModel):
+    """
+    Generic response for the verification email resend request.
+
+    The message is identical regardless of whether the email belongs to an
+    existing account, so callers cannot use this endpoint to enumerate
+    registered addresses.
+    """
+
+    detail: str
+
+
 class TokenRefresh(BaseModel):
     """
     Schema for token refresh request.

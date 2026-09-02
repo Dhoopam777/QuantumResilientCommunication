@@ -4,7 +4,7 @@ Authentication Dependencies for Quantum-Resilient Communication System
 This module provides FastAPI dependencies for protected routes.
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -14,11 +14,12 @@ from models.user import User
 from core.security import decode_token
 from services.user_service import get_user_by_id
 
-security_scheme = HTTPBearer()
+security_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """
@@ -44,14 +45,23 @@ def get_current_user(
             - User account is inactive
     """
     # Extract token from credentials
-    token = credentials.credentials
-
-    if not token:
+    if credentials is None:
+        if request.headers.get("Authorization"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authenticated",
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authenticated",
+        )
+    token = credentials.credentials
 
     # Decode and validate the JWT
     try:

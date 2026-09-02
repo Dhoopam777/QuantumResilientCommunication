@@ -147,6 +147,7 @@ class MessageResponse(BaseModel):
     updated_at: datetime
     reactions: list[ReactionSummary] = Field(default_factory=list)
     signature_status: str = "unverified"
+    integrity_status: str = "unverified"
     encryption_version: Optional[str] = None
     nonce: Optional[str] = None
     authentication_tag: Optional[str] = None

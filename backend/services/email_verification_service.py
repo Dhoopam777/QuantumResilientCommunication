@@ -35,13 +35,12 @@ def verify_token(db: Session, token: str) -> User:
         .first()
     )
     now = datetime.now(timezone.utc)
-    if (
-        user is None
-        or user.verification_token_expires_at is None
-        or user.verification_token_expires_at <= now
-        or user.is_email_verified
-    ):
-        raise ValueError("Invalid or expired verification token")
+    if user is None:
+        raise ValueError("Invalid verification token")
+    if user.is_email_verified:
+        raise ValueError("Verification link has already been used")
+    if user.verification_token_expires_at is None or user.verification_token_expires_at <= now:
+        raise ValueError("Verification link has expired")
     user.is_email_verified = True
     user.is_verified = True
     user.email_verified_at = now

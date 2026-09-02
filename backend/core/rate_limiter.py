@@ -197,21 +197,28 @@ class RateLimiter:
                 )
             self._group_action_times[user_id].append(now)
 
-    def check_verification_resend_rate(self, user_id: str) -> None:
+    def check_verification_resend_rate(self, key: str) -> None:
+        """Rate limit verification resend requests per key.
+
+        The key is a normalized email address for the public resend endpoint
+        (buckets) or a user id for any authenticated flows. Applied before the
+        account lookup so existing and non-existing addresses are limited
+        identically (no rate-limit enumeration oracle).
+        """
         from fastapi import HTTPException, status
 
         with self._lock:
             now = time.time()
-            self._verification_resend_times[user_id] = [
-                t for t in self._verification_resend_times[user_id] if now - t < 3600.0
+            self._verification_resend_times[key] = [
+                t for t in self._verification_resend_times[key] if now - t < 3600.0
             ]
-            if len(self._verification_resend_times[user_id]) >= self.max_verification_resends_per_hour:
+            if len(self._verification_resend_times[key]) >= self.max_verification_resends_per_hour:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Verification resend limit exceeded",
                     headers={"Retry-After": "3600"},
                 )
-            self._verification_resend_times[user_id].append(now)
+            self._verification_resend_times[key].append(now)
 
     def check_session_rate(self, user_id: str) -> None:
         """Limit session establishment attempts per user."""

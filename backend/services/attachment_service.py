@@ -60,6 +60,7 @@ _MIME_TO_EXTENSIONS = {
     "image/png": [".png"],
     "image/jpeg": [".jpg", ".jpeg"],
     "image/webp": [".webp"],
+    "audio/webm": [".webm"],
 }
 
 # Rejected extensions (executable / script types)

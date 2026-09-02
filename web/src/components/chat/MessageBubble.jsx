@@ -276,6 +276,11 @@ export default function MessageBubble({
                         alt={attachment.original_filename}
                         className="max-h-64 max-w-full rounded object-contain"
                       />
+                    ) : attachment.local_url && attachment.mime_type?.startsWith('audio/') ? (
+                      <audio controls preload="metadata" className="max-w-full" aria-label="Voice message">
+                        <source src={attachment.local_url} type={attachment.mime_type} />
+                        Your browser cannot play this voice message.
+                      </audio>
                     ) : (
                       <span className="text-xs">{attachment.original_filename}</span>
                     )}

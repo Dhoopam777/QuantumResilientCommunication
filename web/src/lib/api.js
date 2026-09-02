@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 let authFailureHandler = null
 
 export const getAccessToken = () => localStorage.getItem('qrc_access_token') || ''
@@ -34,7 +34,7 @@ export const authApi = {
   refresh: (refresh_token) => request('/auth/refresh', { method: 'POST', body: JSON.stringify({ refresh_token }) }),
   me: () => request('/auth/me'),
   verifyEmail: (token) => request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
-  resendVerification: () => request('/auth/resend-verification', { method: 'POST' }),
+  resendVerification: (email) => request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
 }
 
 export const profileApi = {

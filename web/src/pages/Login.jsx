@@ -72,6 +72,10 @@ export default function Login() {
       <p className="mt-4 text-sm text-text-secondary">
         Need an account? <Link to="/test/register" className="text-accent hover:underline">Register</Link>
       </p>
+      <p className="mt-2 text-sm text-text-secondary">
+        Didn&apos;t receive your verification email?{' '}
+        <Link to="/test/resend-verification" className="text-accent hover:underline">Resend it</Link>
+      </p>
 
       <DebugPanel request={result.request} response={result.response} error={result.error} />
     </div>

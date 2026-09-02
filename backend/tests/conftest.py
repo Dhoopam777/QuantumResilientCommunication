@@ -117,6 +117,7 @@ def test_user(db_session: Session) -> User:
         full_name="Test User",
         is_active=True,
         is_verified=True,
+        is_email_verified=True,
     )
     db_session.add(user)
     db_session.commit()
@@ -165,6 +166,7 @@ def test_user2(db_session: Session) -> User:
         full_name="Test User 2",
         is_active=True,
         is_verified=True,
+        is_email_verified=True,
     )
     db_session.add(user)
     db_session.commit()

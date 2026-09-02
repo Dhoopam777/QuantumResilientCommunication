@@ -4,6 +4,7 @@ Message Service for Quantum-Resilient Communication System
 This module provides business logic for message operations.
 """
 
+import hashlib
 import uuid
 import base64
 from datetime import datetime, timezone
@@ -207,7 +208,9 @@ class MessageService:
             conversation_id=conversation_id,
             sender_id=sender_id,
             content_encrypted=content_encrypted,
-            content_hash=content_hash,
+            # The server computes the digest over ciphertext so the stored
+            # integrity indicator is not a client assertion.
+            content_hash=hashlib.sha256(content_encrypted.encode("utf-8")).hexdigest(),
             message_type=message_type,
             reply_to=reply_to,
             reply_to_message_id=reply_to_message_id,
@@ -313,7 +316,7 @@ class MessageService:
 
         # Update only the text content fields
         message.content_encrypted = content_encrypted
-        message.content_hash = content_hash
+        message.content_hash = hashlib.sha256(content_encrypted.encode("utf-8")).hexdigest()
         if settings.PQC_ENABLED and not signature:
             sender = db.query(User).filter(User.id == user_id).first()
             try:

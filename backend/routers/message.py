@@ -4,6 +4,7 @@ Message Router for Quantum-Resilient Communication System
 This module provides message endpoints.
 """
 
+import hashlib
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -114,16 +115,17 @@ def _serialize_message(
                 str(message.sender_id),
                 str(message.id),
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Message verification failed",
+            # Historical signatures can become unverifiable after device-key
+            # rotation (per-device keys). Report rather than fail the whole
+            # conversation listing; the message is never treated as verified.
+            signature_status = "invalid"
+        else:
+            signature_status = "verified"
+            log_message_signature_event(
+                "MESSAGE_VERIFIED",
+                str(message.sender_id),
+                str(message.id),
             )
-        signature_status = "verified"
-        log_message_signature_event(
-            "MESSAGE_VERIFIED",
-            str(message.sender_id),
-            str(message.id),
-        )
     return MessageResponse(
         id=message.id,
         conversation_id=message.conversation_id,
@@ -156,6 +158,11 @@ def _serialize_message(
             else []
         ),
         signature_status=signature_status,
+        integrity_status=(
+            "verified" if message.content_hash == hashlib.sha256(
+                message.content_encrypted.encode("utf-8")
+            ).hexdigest() else "invalid"
+        ),
         encryption_version=message.encryption_version,
         nonce=message.nonce,
         authentication_tag=message.authentication_tag,

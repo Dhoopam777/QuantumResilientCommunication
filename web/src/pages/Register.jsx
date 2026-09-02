@@ -90,7 +90,7 @@ export default function Register() {
 
       {result.status === 201 && (
         <p className="mt-3 text-sm text-success">
-          Registration successful! <Link to="/test/login" className="text-accent hover:underline">Go to Login</Link>
+          Verification is required before login. A verification link was sent to {result.response?.email}. Check that inbox, then <Link to="/test/login" className="text-accent hover:underline">go to Login</Link>.
         </p>
       )}
 

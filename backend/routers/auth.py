@@ -7,10 +7,13 @@ This module provides user registration, login, token refresh, and protected endp
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer
 from jose import JWTError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.database import get_db
 from schemas.user import (
+    ResendVerificationRequest,
+    ResendVerificationResponse,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -119,6 +122,12 @@ def login(user_login: UserLogin, db: Session = Depends(get_db)) -> TokenResponse
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not (user.is_email_verified and user.is_verified):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required before login",
         )
 
     # Generate tokens
@@ -269,19 +278,66 @@ def verify_email(token: str = Query(min_length=1, max_length=128), db: Session =
         user = verify_token(db, token)
     except ValueError as exc:
         log_email_verification_event("EMAIL_VERIFICATION_FAILED", "unknown", str(exc))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     log_email_verification_event("EMAIL_VERIFIED", str(user.id))
     return UserResponse.model_validate(user)
 
 
-@router.post("/resend-verification", response_model=UserResponse)
+RESEND_VERIFICATION_GENERIC_MESSAGE = (
+    "If that email belongs to an unverified account, "
+    "a fresh verification link has been sent."
+)
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resend email verification link",
+    description=(
+        "Public endpoint that accepts an email address. Always returns the "
+        "same generic response; a fresh verification link is sent only if the "
+        "address belongs to an existing, active, unverified account. This "
+        "prevents account enumeration while fixing the login lockout for "
+        "users who lost their original verification email."
+    ),
+)
 def resend_verification(
-    current_user: User = Depends(get_current_user),
+    payload: ResendVerificationRequest,
     db: Session = Depends(get_db),
-):
-    rate_limiter.check_verification_resend_rate(str(current_user.id))
-    log_email_verification_event("RESEND_REQUESTED", str(current_user.id))
-    if not (current_user.is_email_verified or current_user.is_verified):
-        issue_verification(db, current_user)
-        log_email_verification_event("EMAIL_VERIFICATION_SENT", str(current_user.id))
-    return UserResponse.model_validate(current_user)
+) -> ResendVerificationResponse:
+    """Send a fresh verification link for unverified accounts only.
+
+    The endpoint requires no JWT, so a user whose email is not yet verified
+    (and who is therefore blocked from login) can still recover verification.
+    The rate limit is applied before the account lookup so existing and
+    non-existing addresses are throttled identically.
+
+    Args:
+        payload: Email address to resend verification for.
+        db: Database session dependency
+
+    Returns:
+        ResendVerificationResponse: Always the same generic message.
+    """
+    email = payload.email.strip().lower()
+    rate_limiter.check_verification_resend_rate(email)
+    log_email_verification_event("RESEND_REQUESTED", email)
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if (
+        user is not None
+        and user.is_active
+        and not (user.is_email_verified or user.is_verified)
+    ):
+        try:
+            issue_verification(db, user)
+            log_email_verification_event("EMAIL_VERIFICATION_SENT", str(user.id))
+        except Exception as exc:
+            # A delivery failure must not turn a public endpoint into an
+            # account-enumeration oracle (500 vs 200). The token is already
+            # persisted by issue_verification, so the account still has a
+            # fresh, valid verification link for the current expiry window.
+            log_email_verification_event(
+                "EMAIL_VERIFICATION_SEND_FAILED", str(user.id), str(exc)
+            )
+    return ResendVerificationResponse(detail=RESEND_VERIFICATION_GENERIC_MESSAGE)

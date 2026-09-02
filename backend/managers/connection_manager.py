@@ -21,27 +21,21 @@ IDOR prevention:
     without being a verified participant in the database.
 """
 
-import uuid
 import logging
+import uuid
 from typing import Optional
 
-from fastapi import WebSocket
-from sqlalchemy.orm import Session
-
 from core.security import decode_token
-from core.websocket_events import (
-    WS_EVENT_AUTH_SUCCESS,
-    WS_EVENT_AUTH_ERROR,
-    WS_EVENT_JOINED_CONVERSATION,
-    WS_EVENT_LEFT_CONVERSATION,
-    WS_EVENT_NEW_MESSAGE,
-    WS_EVENT_ERROR,
-    WS_EVENT_PONG,
-    WS_CLOSE_AUTH_FAILED,
-    WS_CLOSE_FORBIDDEN,
-)
-from services.user_service import get_user_by_id
+from core.websocket_events import (WS_CLOSE_AUTH_FAILED, WS_CLOSE_FORBIDDEN,
+                                   WS_EVENT_AUTH_ERROR, WS_EVENT_AUTH_SUCCESS,
+                                   WS_EVENT_ERROR,
+                                   WS_EVENT_JOINED_CONVERSATION,
+                                   WS_EVENT_LEFT_CONVERSATION,
+                                   WS_EVENT_NEW_MESSAGE, WS_EVENT_PONG)
+from fastapi import WebSocket
 from services.conversation_service import is_participant
+from services.user_service import get_user_by_id
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 

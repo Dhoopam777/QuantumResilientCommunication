@@ -5,9 +5,10 @@ This module handles application configuration using Pydantic Settings.
 All settings are loaded from environment variables or .env file.
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator
 from typing import Optional
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -46,7 +47,12 @@ class Settings(BaseSettings):
     # Attachment Security
     ATTACHMENT_STORAGE_PATH: str = "./storage/attachments"
     ATTACHMENT_MAX_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
-    ATTACHMENT_ALLOWED_MIME_TYPES: list[str] = ["image/png", "image/jpeg", "image/webp"]
+    # The server only receives ciphertext for encrypted attachments.  These
+    # types therefore constrain authenticated metadata, while the browser
+    # validates the plaintext before encryption.
+    ATTACHMENT_ALLOWED_MIME_TYPES: list[str] = [
+        "image/png", "image/jpeg", "image/webp", "audio/webm",
+    ]
     ATTACHMENT_MAX_FILENAME_LENGTH: int = 255
     ATTACHMENT_MAX_METADATA_LENGTH: int = 256
     ATTACHMENT_UPLOAD_RATE_LIMIT: int = 10  # uploads per minute per user
@@ -63,7 +69,7 @@ class Settings(BaseSettings):
     CONVERSATION_REQUESTS_PER_DAY: int = 20
     GROUP_ACTION_RATE_LIMIT: int = 60
     EMAIL_VERIFICATION_RESEND_RATE_LIMIT: int = 5
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:5175"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""

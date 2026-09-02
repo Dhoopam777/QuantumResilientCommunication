@@ -11,6 +11,7 @@ import TokenViewer from './pages/TokenViewer'
 import ConversationRequests from './pages/ConversationRequests'
 import GroupsPage from './pages/GroupsPage'
 import VerifyEmail from './pages/VerifyEmail'
+import ResendVerification from './pages/ResendVerification'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/test/requests" element={<ConversationRequests />} />
           <Route path="/test/groups" element={<GroupsPage />} />
           <Route path="/test/verify-email" element={<Layout><VerifyEmail /></Layout>} />
+          <Route path="/test/resend-verification" element={<Layout><ResendVerification /></Layout>} />
           <Route path="/test/tokens" element={<Layout><TokenViewer /></Layout>} />
           <Route path="*" element={<Navigate to="/test" replace />} />
         </Routes>

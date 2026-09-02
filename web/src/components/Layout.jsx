@@ -10,7 +10,7 @@ export default function Layout({ children }) {
   const unverified = isLoggedIn && user && !(user.is_email_verified || user.is_verified)
 
   const resend = async () => {
-    const response = await authApi.resendVerification()
+    const response = await authApi.resendVerification(user?.email)
     setResendState(response.status === 200 ? 'Verification email sent.' : (response.data?.detail || 'Unable to resend.'))
   }
 

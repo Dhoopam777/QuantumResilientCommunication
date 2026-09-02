@@ -32,16 +32,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add message deletion fields to messages table."""
-    op.add_column(
-        "messages",
-        sa.Column(
-            "deleted_at",
-            sa.DateTime(timezone=True),
-            nullable=True,
-            comment="Timestamp when the message was deleted (NULL if not deleted)",
-        ),
-    )
+    """Add message deletion fields to messages table.
+
+    Note: ``deleted_at`` is intentionally NOT added here because migration
+    004 already creates it on the ``messages`` table. Adding it again would
+    fail with a DuplicateColumn error on a clean database.
+    """
     op.add_column(
         "messages",
         sa.Column(
@@ -63,7 +59,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop message deletion fields from messages table."""
+    """Drop message deletion fields from messages table.
+
+    ``deleted_at`` is not dropped here because it was created by migration 004
+    (which drops the entire messages table in its own downgrade).
+    """
     op.drop_column("messages", "delete_type")
     op.drop_column("messages", "deleted_by")
-    op.drop_column("messages", "deleted_at")

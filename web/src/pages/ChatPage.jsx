@@ -1,34 +1,35 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import ChatHeader from '../components/chat/ChatHeader'
+import ChatLayout from '../components/chat/ChatLayout'
+import ConversationList from '../components/chat/ConversationList'
+import DetailsPanel from '../components/chat/DetailsPanel'
+import MessageComposer from '../components/chat/MessageComposer'
+import MessageList from '../components/chat/MessageList'
+import SecurityStatus from '../components/chat/SecurityStatus'
+import EmptyState from '../components/common/EmptyState'
+import { useAuth } from '../context/AuthContext'
 import {
-  conversationApi,
-  groupApi,
-  messageApi,
-  cryptoApi,
   attachmentApi,
+  conversationApi,
+  cryptoApi,
   getAccessToken,
   getLastConversationId,
+  groupApi,
+  messageApi,
   setLastConversationId,
 } from '../lib/api'
 import {
+  decryptBytes,
+  decryptMessage,
+  encryptBytes,
+  encryptMessage,
   ensureDeviceIdentity,
   establishClientSession,
   restoreSession,
-  encryptMessage,
-  decryptMessage,
   signMessage,
-  encryptBytes,
-  decryptBytes,
 } from '../lib/pqc'
 import { WebSocketClient } from '../lib/websocket'
-import { useAuth } from '../context/AuthContext'
-import ChatLayout from '../components/chat/ChatLayout'
-import ConversationList from '../components/chat/ConversationList'
-import ChatHeader from '../components/chat/ChatHeader'
-import MessageList from '../components/chat/MessageList'
-import MessageComposer from '../components/chat/MessageComposer'
-import DetailsPanel from '../components/chat/DetailsPanel'
-import EmptyState from '../components/common/EmptyState'
 
 export default function ChatPage() {
   const { conversationId } = useParams()
@@ -354,18 +355,26 @@ export default function ChatPage() {
     } else {
       throw new Error(res.data?.detail || 'Failed to update reaction')
     }
+  }
 
-    const handleAddGroupMember = async (username) => {
-      if (!conversation?.is_group) return
-      const res = await groupApi.addMember(conversation.id, username)
-      if (res.status === 200) setConversation(res.data)
+  const handleAddGroupMember = async (username) => {
+    if (!conversation?.is_group) return
+    const res = await groupApi.addMember(conversation.id, username)
+    if (res.status === 200 && res.data) {
+      setConversation(res.data)
+      return
     }
+    throw new Error(res.data?.detail || 'Failed to add group member')
+  }
 
-    const handleRemoveGroupMember = async (username) => {
-      if (!conversation?.is_group) return
-      const res = await groupApi.removeMember(conversation.id, username)
-      if (res.status === 200) setConversation(res.data)
+  const handleRemoveGroupMember = async (username) => {
+    if (!conversation?.is_group) return
+    const res = await groupApi.removeMember(conversation.id, username)
+    if (res.status === 200 && res.data) {
+      setConversation(res.data)
+      return
     }
+    throw new Error(res.data?.detail || 'Failed to remove group member')
   }
 
   const validateAttachment = async (file) => {
@@ -373,17 +382,19 @@ export default function ChatPage() {
       'image/png': '.png',
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/webp': '.webp',
+      'audio/webm': '.webm',
     }
     const expectedExtension = allowed[file.type]
     const extension = `.${file.name.split('.').pop().toLowerCase()}`
     if (!expectedExtension || (!Array.isArray(expectedExtension)
       ? extension !== expectedExtension
       : !expectedExtension.includes(extension))) {
-      throw new Error('Only PNG, JPEG, and WebP images are supported')
+      throw new Error('Only PNG, JPEG, WebP, and recorded WebM audio are supported')
     }
     if (file.size <= 0 || file.size + 16 > 10 * 1024 * 1024) {
       throw new Error('Attachment exceeds the maximum encrypted size')
     }
+    if (!file.type.startsWith('image/')) return
     const objectUrl = URL.createObjectURL(file)
     try {
       await new Promise((resolve, reject) => {
@@ -416,48 +427,48 @@ export default function ChatPage() {
     return uploaded
   }
 
-  const handleSend = async (content, replyTarget = null, files = []) => {
+  const handleSend = async (content, replyTarget = null, files = [], messageType = 'text') => {
     if (!conversationId || (!content.trim() && files.length === 0)) return
     const key = await ensureSession()
     if (!key) throw new Error('Secure session unavailable')
     const uploadedAttachments = await uploadEncryptedAttachments(files, key, conversationId)
     try {
-      const messageContent = content.trim() || 'Attachment'
+      const messageContent = content.trim() || (messageType === 'audio' ? 'Voice message' : 'Attachment')
       const encrypted = await encryptMessage(key, messageContent)
       const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
       const signature = await signMessage({
-      conversation_id: conversationId,
-      sender_id: user.id,
-      message_type: 'text',
-      content_encrypted: encrypted.ciphertext,
-      attachments: uploadedAttachments.map((attachment) => ({
-        id: attachment.id,
-        original_filename: attachment.original_filename,
-        mime_type: attachment.mime_type,
-        file_size: attachment.file_size,
-        checksum_sha256: attachment.checksum_sha256,
-        width: attachment.width,
-        height: attachment.height,
-        encryption_algorithm: attachment.encryption_algorithm,
-        nonce: attachment.nonce,
-        authentication_tag: attachment.authentication_tag,
-        encrypted_size: attachment.encrypted_size,
-      })),
-      timestamp: signature_created_at,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        message_type: messageType,
+        content_encrypted: encrypted.ciphertext,
+        attachments: uploadedAttachments.map((attachment) => ({
+          id: attachment.id,
+          original_filename: attachment.original_filename,
+          mime_type: attachment.mime_type,
+          file_size: attachment.file_size,
+          checksum_sha256: attachment.checksum_sha256,
+          width: attachment.width,
+          height: attachment.height,
+          encryption_algorithm: attachment.encryption_algorithm,
+          nonce: attachment.nonce,
+          authentication_tag: attachment.authentication_tag,
+          encrypted_size: attachment.encrypted_size,
+        })),
+        timestamp: signature_created_at,
       })
       const payload = {
-      conversation_id: conversationId,
-      content_encrypted: encrypted.ciphertext,
-      content_hash: encrypted.ciphertext,
-      encryption_version: 'AES-256-GCM',
-      nonce: encrypted.nonce,
-      authentication_tag: encrypted.tag,
-      signature,
-      signature_created_at,
-      message_type: 'text',
-      reply_to: replyTarget ? replyTarget.id : null,
-      reply_to_message_id: replyTarget ? replyTarget.id : null,
-      attachment_ids: uploadedAttachments.map((attachment) => attachment.id),
+        conversation_id: conversationId,
+        content_encrypted: encrypted.ciphertext,
+        content_hash: encrypted.ciphertext,
+        encryption_version: 'AES-256-GCM',
+        nonce: encrypted.nonce,
+        authentication_tag: encrypted.tag,
+        signature,
+        signature_created_at,
+        message_type: messageType,
+        reply_to: replyTarget ? replyTarget.id : null,
+        reply_to_message_id: replyTarget ? replyTarget.id : null,
+        attachment_ids: uploadedAttachments.map((attachment) => attachment.id),
       }
       const res = await messageApi.send(payload)
       if (res.status !== 201) throw new Error(res.data?.detail || 'Unable to send message')
@@ -508,6 +519,12 @@ export default function ChatPage() {
       {conversationId ? (
         <>
           <ChatHeader conversation={conversation} currentUserId={user?.id} />
+          <SecurityStatus
+            user={user}
+            authenticated={Boolean(accessToken)}
+            sessionReady={Boolean(sessionKeyRef.current)}
+            messages={allMessages}
+          />
           <MessageList
             messages={allMessages}
             currentUserId={user?.id}
