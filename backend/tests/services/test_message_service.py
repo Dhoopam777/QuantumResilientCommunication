@@ -840,12 +840,14 @@ class TestGetConversationMessages:
         assert messages[0].id == msg1.id  # Oldest first
         assert messages[-1].id == msg2.id  # Newest last
 
-    def test_excludes_soft_deleted_messages(self, db_session: Session, test_conversation, test_user):
+    def test_excludes_own_me_deleted_messages(self, db_session: Session, test_conversation, test_user):
         """
-        Test that soft-deleted messages are excluded.
-        
+        Test that a message deleted 'for me' by the requesting user is excluded
+        from that user's conversation listing.
+
         Verifies:
-        - Messages with is_deleted=True are not returned
+        - Filtering is based on delete_type + deleted_by, not is_deleted alone.
+        - A message with delete_type='me' and deleted_by=user_id is hidden from that user.
         """
         # Create a message
         msg = send_message(
@@ -856,18 +858,23 @@ class TestGetConversationMessages:
             content_hash="hash_del",
             message_type="text",
         )
-        
-        # Soft delete the message
-        msg.is_deleted = True
-        db_session.add(msg)
-        db_session.commit()
-        
+
+        # Delete for me via the real service path (sets delete_type='me',
+        # deleted_by=user_id, is_deleted=False).
+        delete_message(
+            db=db_session,
+            message_id=msg.id,
+            user_id=test_user.id,
+            mode="me",
+        )
+
         messages = get_conversation_messages(
             db=db_session,
             conversation_id=test_conversation.id,
             user_id=test_user.id,
         )
-        
+
+        # The user's own 'for me' deletion is excluded from their view.
         assert not any(m.id == msg.id for m in messages)
 
     def test_pagination_limit_works(self, db_session: Session, test_conversation, test_user):

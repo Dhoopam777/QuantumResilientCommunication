@@ -1,12 +1,15 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import {
+  authApi,
+  clearLastConversationId,
+  clearTokens,
+  decodeJwtPayload,
   getAccessToken,
   getRefreshToken,
-  setTokens,
-  clearTokens,
-  clearLastConversationId,
-  authApi,
+  refreshAccessToken as apiRefreshAccessToken,
   setOnAuthFailure,
+  setOnTokenRefresh,
+  setTokens,
 } from '../lib/api'
 
 const AuthContext = createContext(null)
@@ -18,6 +21,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   // Reference to the active WebSocket client so logout can close it
   const wsClientRef = useRef(null)
+  // Proactive access-token refresh timer (fires ~60s before expiry)
+  const refreshTimerRef = useRef(null)
+  const refreshRetryRef = useRef(0)
 
   /**
    * Register a WebSocket client so logout can close it.
@@ -38,6 +44,12 @@ export function AuthProvider({ children }) {
    * Clear all auth state and cached data.
    */
   const logout = useCallback(() => {
+    // Clean up any pending proactive refresh and refuse stale refreshes.
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    refreshRetryRef.current = 0
     clearTokens()
     clearLastConversationId()
     setAccessToken('')
@@ -66,8 +78,9 @@ export function AuthProvider({ children }) {
   /**
    * Validate the session on mount:
    *   1. If tokens exist, call /auth/me to verify the access token.
-   *   2. If 401, try to refresh the access token and retry /auth/me.
-   *   3. If refresh fails, clear tokens (user must log in again).
+   *   2. The API layer automatically refreshes on a 401 and retries, so a
+   *      successful /auth/me means the session is valid (possibly after refresh).
+   *   3. If validation still fails, the session is gone — log out.
    */
   useEffect(() => {
     let cancelled = false
@@ -88,49 +101,26 @@ export function AuthProvider({ children }) {
         return
       }
 
-      // Access token is invalid/expired — try to refresh it
-      const refresh = getRefreshToken()
-      if (!refresh) {
-        // No refresh token — session is invalid
-        logout()
-        if (!cancelled) setLoading(false)
-        return
-      }
-
-      try {
-        const res = await authApi.refresh(refresh)
-        if (cancelled) return
-
-        if (res.status === 200 && res.data?.access_token) {
-          setTokens(res.data.access_token, refresh)
-          setAccessToken(res.data.access_token)
-          // Retry loading the user with the new token
-          const retryUser = await loadCurrentUser()
-          if (!cancelled) {
-            if (!retryUser) {
-              logout()
-            }
-            setLoading(false)
-          }
-        } else {
-          // Refresh failed — session is invalid
-          logout()
-          if (!cancelled) setLoading(false)
-        }
-      } catch (err) {
-        logout()
-        if (!cancelled) setLoading(false)
-      }
+      // Auto-refresh already failed inside the API layer — session is invalid.
+      logout()
+      if (!cancelled) setLoading(false)
     }
 
-    // Register the auth failure callback so api.js can trigger logout
-    // when a token refresh fails during any API call.
+    validateSession()
+
+    // Register the auth-failure callback so api.js can trigger logout when a
+    // token refresh fails during any API call.
     setOnAuthFailure(() => {
       logout()
       setLoading(false)
     })
 
-    validateSession()
+    // Forward successfully refreshed access tokens into React state so that
+    // consumers (e.g. ChatPage) can re-authenticate the WebSocket via
+    // reconnectWithToken().
+    setOnTokenRefresh((newToken) => {
+      setAccessToken(newToken)
+    })
 
     return () => {
       cancelled = true
@@ -151,23 +141,65 @@ export function AuthProvider({ children }) {
   )
 
   /**
-   * Refresh the access token manually (used by WebSocket re-auth).
+   * Refresh the access token and publish the result to React state.
+   * The single-flight refresh itself lives in api.js; this wrapper keeps the
+   * existing refreshAccessToken context API intact (used by WebSocket re-auth).
    * @returns {Promise<string|null>} The new access token, or null on failure
    */
   const refreshAccessToken = useCallback(async () => {
-    const refresh = getRefreshToken()
-    if (!refresh) return null
+    const newToken = await apiRefreshAccessToken()
+    if (newToken) setAccessToken(newToken)
+    return newToken
+  }, [])
 
-    try {
-      const res = await authApi.refresh(refresh)
-      if (res.status === 200 && res.data?.access_token) {
-        setTokens(res.data.access_token, refresh)
-        setAccessToken(res.data.access_token)
-        return res.data.access_token
-      }
-      return null
-    } catch (err) {
-      return null
+  /**
+   * Proactively refresh ~60 seconds before the access token expires so the
+   * user is never forced to log in again every 15 minutes.
+   */
+  const runProactiveRefresh = useCallback(async () => {
+    const newToken = await refreshAccessToken()
+    if (newToken) return
+    // Bounded background retries for transient failures; the reactive
+    // 401-refresh in api.js covers any remaining cases.
+    if (refreshRetryRef.current >= 5) return
+    refreshRetryRef.current += 1
+    refreshTimerRef.current = setTimeout(() => {
+      runProactiveRefresh()
+    }, 60 * 1000)
+  }, [refreshAccessToken])
+
+  const scheduleTokenRefresh = useCallback((token) => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    refreshRetryRef.current = 0
+    if (!token) return
+
+    const payload = decodeJwtPayload(token)
+    const expSec = payload?.exp
+    if (!expSec) return
+
+    const delayMs = expSec * 1000 - Date.now() - 60 * 1000
+    if (delayMs <= 0) {
+      runProactiveRefresh()
+      return
+    }
+    refreshTimerRef.current = setTimeout(() => {
+      runProactiveRefresh()
+    }, delayMs)
+  }, [runProactiveRefresh])
+
+  // (Re)schedule the proactive refresh whenever the access token changes.
+  useEffect(() => {
+    scheduleTokenRefresh(accessToken)
+  }, [accessToken, scheduleTokenRefresh])
+
+  // Clean up any pending refresh timer when the provider unmounts.
+  useEffect(() => () => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
     }
   }, [])
 

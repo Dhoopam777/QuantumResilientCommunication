@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { conversationApi, groupApi, userApi } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { useChat } from '../context/ChatContext'
 import Layout from '../components/Layout'
 import Avatar from '../components/common/Avatar'
 import Button from '../components/common/Button'
 import Spinner from '../components/common/Spinner'
+import EmptyState from '../components/common/EmptyState'
+import { SearchIcon } from '../components/icons'
 
 export default function GroupsPage() {
   const { isLoggedIn, user } = useAuth()
+  const { selectConversation } = useChat()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -63,7 +67,8 @@ export default function GroupsPage() {
     })
     setLoading(false)
     if (response.status === 201) {
-      navigate(`/test/chat/${response.data.id}`)
+      selectConversation(response.data.id)
+      navigate('/test/chat')
     } else {
       setError(response.data?.detail || 'Unable to create group.')
     }
@@ -76,15 +81,21 @@ export default function GroupsPage() {
           <h1 className="text-xl font-semibold text-text-primary">Groups</h1>
           <Link to="/test/chat" className="text-sm text-accent">Back to chats</Link>
         </div>
-        <form onSubmit={create} className="bg-surface border border-border rounded-xl p-5 space-y-3">
-          <h2 className="font-semibold text-text-primary">Create Group</h2>
-          <input className="input" placeholder="Group name" value={name} onChange={(event) => setName(event.target.value)} maxLength={255} />
-          <textarea className="input min-h-20" placeholder="Description (optional)" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={1000} />
-          <input className="input" placeholder="Search usernames" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <form onSubmit={create} className="bg-surface rounded-xl p-5 shadow-sm">
+          <h2 className="font-semibold text-text-primary mb-3">Create Group</h2>
+          <div className="grid grid-cols-1 gap-3 mb-4">
+            <input className="input input-bordered" placeholder="Group name" value={name} onChange={(event) => setName(event.target.value)} maxLength={255} />
+            <textarea className="input input-bordered min-h-20 placeholder-textarea" placeholder="Description (optional)" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={1000} />
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs text-text-secondary">Search usernames</span>
+            <input className="input input-bordered flex-1" placeholder="Search usernames" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <SearchIcon className="w-4 h-4 text-text-muted" />
+          </div>
           {matches.length > 0 && (
-            <div className="border border-border rounded-lg divide-y divide-border">
+            <div className="mt-2 rounded-xl border border-border divide-y divide-border shadow-sm">
               {matches.map((candidate) => (
-                <button type="button" key={candidate.username} onClick={() => addSelected(candidate)} className="w-full flex items-center gap-2 p-2 text-left hover:bg-surface-hover">
+                <button type="button" key={candidate.username} onClick={() => addSelected(candidate)} className="w-full flex items-center gap-2 p-2 text-left hover:bg-surface-hover transition-colors">
                   <Avatar name={candidate.display_name || candidate.username} src={candidate.profile_picture_url} size="sm" />
                   <span className="text-sm text-text-primary">@{candidate.username}</span>
                 </button>
@@ -92,26 +103,46 @@ export default function GroupsPage() {
             </div>
           )}
           {selected.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {selected.map((candidate) => (
-                <button type="button" key={candidate.username} onClick={() => setSelected((items) => items.filter((item) => item.username !== candidate.username))} className="px-2 py-1 rounded-full bg-accent-soft text-sm text-accent">
+                <button type="button" key={candidate.username} onClick={() => setSelected((items) => items.filter((item) => item.username !== candidate.username))} className="px-2 py-0.5 rounded-full bg-accent-soft text-xs text-accent">
                   @{candidate.username} ×
                 </button>
               ))}
             </div>
           )}
-          {error && <p className="text-sm text-danger">{error}</p>}
-          <Button type="submit" disabled={loading}>{loading ? <Spinner /> : 'Create'}</Button>
+          {error && <p className="text-sm text-danger mt-2">{error}</p>}
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? <Spinner className="me-2" /> : 'Create Group'}
+          </Button>
         </form>
-        <div className="space-y-2">
+        {groups.length === 0 && !loading && !error && (
+          <EmptyState
+            icon={<SearchIcon className="w-6 h-6 text-accent" />}
+            title="No groups yet"
+            description="Create a group to start secure quantum-resilient conversations with multiple participants."
+          />
+        )}
+        <div className="space-y-3">
           {groups.map((group) => (
-            <Link key={group.id} to={`/test/chat/${group.id}`} className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg hover:bg-surface-hover">
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => {
+                selectConversation(group.id)
+                navigate('/test/chat')
+              }}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface border border-border hover:bg-surface-hover hover:border-border-accent transition-colors shadow-sm"
+              aria-label={`View group ${group.group_name || 'untitled'}`}
+            >
               <Avatar name={group.group_name || 'Group'} src={group.group_avatar_url} size="md" />
-              <div>
-                <div className="font-medium text-text-primary">{group.group_name || 'Group'}</div>
-                <div className="text-xs text-text-muted">{group.participants?.length || 0} members</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-text-primary truncate">{group.group_name || 'Group'}</div>
+                <div className="text-xs text-text-muted">
+                  {group.participants?.length || 0} members
+                </div>
               </div>
-            </Link>
+            </button>
           ))}
         </div>
       </div>

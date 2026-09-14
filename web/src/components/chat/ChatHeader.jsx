@@ -1,11 +1,13 @@
-import { Link } from 'react-router-dom'
 import Avatar from '../common/Avatar'
 import IconButton from '../common/IconButton'
+import { ShieldCheckIcon, InfoIcon } from '../icons'
+import { useChat } from '../../context/ChatContext'
 
 export default function ChatHeader({ conversation, currentUserId }) {
+  const { openDetails } = useChat()
   if (!conversation) {
     return (
-      <div className="h-16 border-b border-border flex items-center px-4">
+      <div className="h-16 border-b border-border flex items-center px-4 bg-surface/60 backdrop-blur-md">
         <span className="text-sm text-text-muted">Select a conversation</span>
       </div>
     )
@@ -30,13 +32,15 @@ export default function ChatHeader({ conversation, currentUserId }) {
   }
 
   return (
-    <div className="h-16 border-b border-border flex items-center px-4 gap-3 flex-shrink-0">
+    <div className="h-16 border-b border-border flex items-center px-4 gap-3 flex-shrink-0 bg-surface/60 backdrop-blur-md">
       <Avatar name={title} src={avatarSrc} size="md" online={isOnline} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm text-text-primary truncate">{title}</span>
           {conversation.is_encrypted && (
-            <span className="text-xs text-success" title="End-to-end encrypted">🔒</span>
+            <span className="text-xs text-success inline-flex items-center gap-0.5" title="End-to-end encrypted">
+              <ShieldCheckIcon className="w-3.5 h-3.5" />
+            </span>
           )}
         </div>
         {subtitle && <div className="text-xs text-text-muted truncate">{subtitle}</div>}
@@ -44,9 +48,9 @@ export default function ChatHeader({ conversation, currentUserId }) {
           <div className="text-xs text-text-secondary truncate">• {statusMessage}</div>
         )}
       </div>
-      <Link to={`/test/chat/${conversation.id}/details`} className="icon-btn" aria-label="View details" title="View details">
-        ℹ️
-      </Link>
+      <button type="button" onClick={openDetails} className="icon-btn" aria-label="View details" title="View details">
+        <InfoIcon className="w-5 h-5" />
+      </button>
     </div>
   )
 }

@@ -175,13 +175,18 @@ class TestDeleteMessageForEveryone:
         assert deleted.delete_type == "everyone"
         # Row preserved
         assert db_session.query(Message).filter(Message.id == msg.id).first() is not None
-        # Message not returned in conversation listing
+        # Message preserved in conversation listing as a placeholder
+        # (Issue 5B: delete-for-everyone should show "This message was deleted.")
         messages = get_conversation_messages(
             db=db_session,
             conversation_id=test_conversation.id,
             user_id=test_user.id,
         )
-        assert not any(m.id == msg.id for m in messages)
+        assert any(m.id == msg.id for m in messages)
+        # Verify it is marked as deleted in the listing
+        returned = [m for m in messages if m.id == msg.id][0]
+        assert returned.is_deleted is True
+        assert returned.delete_type == "everyone"
 
     def test_delete_for_everyone_preserves_message_id(self, db_session: Session, test_conversation, test_user):
         """

@@ -191,7 +191,13 @@ class CryptoService:
         signature_created_at: datetime,
         attachments_metadata: list[dict] | None = None,
     ) -> bytes:
-        timestamp = signature_created_at.astimezone(timezone.utc).isoformat()
+        # Canonicalize the timestamp to the exact 3-digit-millisecond UTC format
+        # the signing client uses (e.g. "2026-09-12T10:00:00.123+00:00").
+        # Python's datetime.isoformat() emits 6-digit microseconds (or no
+        # fraction at all), which reconstructs a different signed payload and
+        # rejects otherwise-valid ML-DSA signatures.
+        sent_at = signature_created_at.astimezone(timezone.utc)
+        timestamp = sent_at.strftime("%Y-%m-%dT%H:%M:%S") + f".{sent_at.microsecond // 1000:03d}+00:00"
         payload = {
             "conversation_id": str(conversation_id),
             "sender_id": str(sender_id),

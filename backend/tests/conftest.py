@@ -22,6 +22,7 @@ from models.conversation_participant import ConversationParticipant
 from models.message import Message
 from core.security import hash_password
 from core.config import Settings
+from services.crypto_service import CryptoService
 
 
 # Test database URL (PostgreSQL for UUID support)
@@ -122,6 +123,19 @@ def test_user(db_session: Session) -> User:
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+
+    # Generate PQC identity keys so send_message() can sign messages when
+    # PQC_ENABLED=true (the production default). This mirrors the production
+    # device-onboarding path without modifying any crypto logic.
+    try:
+        CryptoService.generate_identity(user)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+    except RuntimeError:
+        # PQC unavailable in this environment — skip key generation.
+        pass
+
     return user
 
 
@@ -171,6 +185,19 @@ def test_user2(db_session: Session) -> User:
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+
+    # Generate PQC identity keys so send_message() can sign messages when
+    # PQC_ENABLED=true (the production default). This mirrors the production
+    # device-onboarding path without modifying any crypto logic.
+    try:
+        CryptoService.generate_identity(user)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+    except RuntimeError:
+        # PQC unavailable in this environment — skip key generation.
+        pass
+
     return user
 
 

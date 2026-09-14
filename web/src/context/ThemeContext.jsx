@@ -7,8 +7,8 @@ export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem(THEME_KEY)
     if (saved === 'light' || saved === 'dark') return saved
-    // Default to light mode
-    return 'light'
+    // Default to the deep-dark QRC foundation.
+    return 'dark'
   })
 
   // Apply theme class to <html> element

@@ -12,7 +12,7 @@ export default function ChatLayout({
   showDetails = false,
 }) {
   return (
-    <div className="h-screen flex overflow-hidden bg-surface">
+    <div className="h-screen flex overflow-hidden page-enter">
       {showSidebar && (
         <Sidebar user={user} onLogout={onLogout} search={search} onSearchChange={onSearchChange}>
           {sidebarContent}

@@ -1,9 +1,11 @@
-import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import Avatar from '../common/Avatar'
 import IconButton from '../common/IconButton'
+import { CloseIcon, ShieldCheckIcon, SendIcon } from '../icons'
+import { useChat } from '../../context/ChatContext'
 
 export default function DetailsPanel({ conversation, currentUserId, canManage = false, onAddMember, onRemoveMember }) {
+  const { closeDetails } = useChat()
   const [memberUsername, setMemberUsername] = useState('')
   if (!conversation) return null
 
@@ -27,12 +29,12 @@ export default function DetailsPanel({ conversation, currentUserId, canManage = 
   }
 
   return (
-    <div className="w-72 flex-shrink-0 bg-surface border-l border-border flex flex-col h-full overflow-y-auto">
-      <div className="p-4 border-b border-border flex items-center justify-between">
+    <div className="w-72 flex-shrink-0 border-l border-border flex flex-col h-full overflow-y-auto bg-surface/90 backdrop-blur-md">
+      <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-surface/80 backdrop-blur-md z-10">
         <h3 className="font-semibold text-sm text-text-primary">Details</h3>
-        <Link to={`/test/chat/${conversation.id}`} className="icon-btn" aria-label="Close details" title="Close details">
-          ✕
-        </Link>
+        <button type="button" onClick={closeDetails} className="icon-btn" aria-label="Close details" title="Close details">
+          <CloseIcon className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Profile info */}
@@ -43,7 +45,9 @@ export default function DetailsPanel({ conversation, currentUserId, canManage = 
         {statusMessage && <p className="text-sm text-text-secondary mt-1">• {statusMessage}</p>}
         {bio && <p className="text-sm text-text-secondary mt-2">{bio}</p>}
         {conversation.is_encrypted && (
-          <p className="text-xs text-success mt-2">🔒 End-to-end encrypted</p>
+          <p className="inline-flex items-center gap-1 text-xs text-success mt-3 px-2.5 py-1 rounded-full bg-success/10">
+            <ShieldCheckIcon className="w-3.5 h-3.5" /> End-to-end encrypted
+          </p>
         )}
       </div>
 
@@ -80,7 +84,7 @@ export default function DetailsPanel({ conversation, currentUserId, canManage = 
                 {canManage && p.user_id !== conversation.created_by && (
                   <button
                     type="button"
-                    className="text-xs text-danger"
+                    className="text-xs text-danger hover:underline"
                     onClick={() => onRemoveMember?.(p.username)}
                     title={`Remove @${p.username}`}
                   >
@@ -108,7 +112,7 @@ export default function DetailsPanel({ conversation, currentUserId, canManage = 
                   onChange={(event) => setMemberUsername(event.target.value)}
                   maxLength={50}
                 />
-                <button type="submit" className="btn-secondary text-xs">Add</button>
+                <button type="submit" className="btn-secondary text-xs"><SendIcon className="w-3 h-3" />Add</button>
             </form>
           )}
         </div>

@@ -1,4 +1,4 @@
-export default function Avatar({ name, src, size = 'md', online = false, className = '' }) {
+export default function Avatar({ name, src, size = 'md', online = false, className = '', ring = false }) {
   const sizes = {
     xs: 'w-6 h-6 text-[10px]',
     sm: 'w-8 h-8 text-xs',
@@ -28,16 +28,22 @@ export default function Avatar({ name, src, size = 'md', online = false, classNa
         <img
           src={src}
           alt={name}
-          className={`${sizes[size]} rounded-full object-cover border border-border`}
+          className={`${sizes[size]} rounded-full object-cover ${
+            ring ? 'ring-2 ring-accent/30' : 'border border-border'
+          }`}
         />
       ) : (
-        <div className={`${sizes[size]} rounded-full bg-accent text-white flex items-center justify-center font-bold`}>
+        <div
+          className={`${sizes[size]} rounded-full bg-gradient-to-br from-indigo-500 via-blue-500 to-violet-500 text-white flex items-center justify-center font-bold shadow-inner ${
+            ring ? 'ring-2 ring-accent/30' : ''
+          }`}
+        >
           {initials}
         </div>
       )}
       {online && (
         <span
-          className={`absolute bottom-0 right-0 ${dotSizes[size]} rounded-full bg-success border-2 border-surface`}
+          className={`absolute bottom-0 right-0 ${dotSizes[size]} rounded-full bg-success border-2 border-surface shadow-sm`}
           title="Online"
         />
       )}

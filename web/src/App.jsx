@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ChatProvider } from './context/ChatContext'
 import Layout from './components/Layout'
 import Register from './pages/Register'
 import Login from './pages/Login'
@@ -16,25 +17,25 @@ import ResendVerification from './pages/ResendVerification'
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/test" element={<Navigate to="/test/chat" replace />} />
-          <Route path="/test/register" element={<Layout><Register /></Layout>} />
-          <Route path="/test/login" element={<Layout><Login /></Layout>} />
-          <Route path="/test/dashboard" element={<Navigate to="/test/chat" replace />} />
-          <Route path="/test/chat" element={<ChatPage />} />
-          <Route path="/test/chat/:conversationId" element={<ChatPage />} />
-          <Route path="/test/chat/:conversationId/details" element={<ChatPage />} />
-          <Route path="/test/conversations/new" element={<Layout><CreateConversation /></Layout>} />
-          <Route path="/test/profile" element={<Profile />} />
-          <Route path="/test/requests" element={<ConversationRequests />} />
-          <Route path="/test/groups" element={<GroupsPage />} />
-          <Route path="/test/verify-email" element={<Layout><VerifyEmail /></Layout>} />
-          <Route path="/test/resend-verification" element={<Layout><ResendVerification /></Layout>} />
-          <Route path="/test/tokens" element={<Layout><TokenViewer /></Layout>} />
-          <Route path="*" element={<Navigate to="/test" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <ChatProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/test" element={<Navigate to="/test/chat" replace />} />
+            <Route path="/test/register" element={<Layout><Register /></Layout>} />
+            <Route path="/test/login" element={<Layout><Login /></Layout>} />
+            <Route path="/test/dashboard" element={<Navigate to="/test/chat" replace />} />
+            <Route path="/test/chat" element={<ChatPage />} />
+            <Route path="/test/conversations/new" element={<Layout><CreateConversation /></Layout>} />
+            <Route path="/test/profile" element={<Profile />} />
+            <Route path="/test/requests" element={<ConversationRequests />} />
+            <Route path="/test/groups" element={<GroupsPage />} />
+            <Route path="/test/verify-email" element={<Layout><VerifyEmail /></Layout>} />
+            <Route path="/test/resend-verification" element={<Layout><ResendVerification /></Layout>} />
+            <Route path="/test/tokens" element={<Layout><TokenViewer /></Layout>} />
+            <Route path="*" element={<Navigate to="/test/login" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ChatProvider>
     </AuthProvider>
   )
 }

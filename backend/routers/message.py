@@ -7,43 +7,34 @@ This module provides message endpoints.
 import hashlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-
-from database.database import get_db
-from schemas.message import (
-    MessageCreate, MessageEdit, MessageDelete, MessageResponse, ReplyPreview,
-    ReactionCreate, ReactionSummary, ReactionUser,
-)
-from services.message_service import (
-    send_message,
-    edit_message,
-    delete_message,
-    get_conversation_messages,
-)
-from core.dependencies import require_verified_user
-from core.websocket_events import WS_EVENT_NEW_MESSAGE, WS_EVENT_MESSAGE_EDITED, WS_EVENT_MESSAGE_DELETED
-from core.websocket_events import WS_EVENT_REACTION_ADDED, WS_EVENT_REACTION_REMOVED
-from core.audit_logger import (
-    log_reply_created,
-    log_reply_rejected,
-    log_message_edited,
-    log_message_edit_rejected,
-    log_message_deleted,
-    log_message_delete_rejected,
-    log_reaction_event,
-    log_message_signature_event,
-)
-from core.rate_limiter import rate_limiter
-from managers.connection_manager import connection_manager
-from models.user import User
-from models.message import Message
-from models.attachment import Attachment
+from core.audit_logger import (log_message_delete_rejected,
+                               log_message_deleted, log_message_edit_rejected,
+                               log_message_edited, log_message_signature_event,
+                               log_reaction_event, log_reply_created,
+                               log_reply_rejected)
 from core.config import settings
+from core.dependencies import require_verified_user
+from core.rate_limiter import rate_limiter
+from core.websocket_events import (WS_EVENT_MESSAGE_DELETED,
+                                   WS_EVENT_MESSAGE_EDITED,
+                                   WS_EVENT_NEW_MESSAGE,
+                                   WS_EVENT_REACTION_ADDED,
+                                   WS_EVENT_REACTION_REMOVED)
+from database.database import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from managers.connection_manager import connection_manager
+from models.attachment import Attachment
+from models.message import Message
+from models.user import User
+from schemas.message import (MessageCreate, MessageDelete, MessageEdit,
+                             MessageResponse, ReactionCreate, ReactionSummary,
+                             ReactionUser, ReplyPreview)
 from services.crypto_service import CryptoService
-from services.reaction_service import (
-    reaction_summaries, toggle_reaction, remove_reaction,
-)
+from services.message_service import (delete_message, edit_message,
+                                      get_conversation_messages, send_message)
+from services.reaction_service import (reaction_summaries, remove_reaction,
+                                       toggle_reaction)
+from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/api/v1/messages",
@@ -88,8 +79,8 @@ def _serialize_message(
     """
     Serialize a Message to MessageResponse, including reply preview.
     """
-    signature_status = "unverified"
-    if settings.PQC_ENABLED:
+    signature_status = "unavailable" if not message.signature else "unverified"
+    if settings.PQC_ENABLED and message.signature:
         attachments_metadata = [
             {
                 "id": str(attachment.id),

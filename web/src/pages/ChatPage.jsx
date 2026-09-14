@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import ChatHeader from '../components/chat/ChatHeader'
 import ChatLayout from '../components/chat/ChatLayout'
 import ConversationList from '../components/chat/ConversationList'
@@ -7,17 +7,17 @@ import DetailsPanel from '../components/chat/DetailsPanel'
 import MessageComposer from '../components/chat/MessageComposer'
 import MessageList from '../components/chat/MessageList'
 import SecurityStatus from '../components/chat/SecurityStatus'
+import UserSearch from '../components/chat/UserSearch'
 import EmptyState from '../components/common/EmptyState'
 import { useAuth } from '../context/AuthContext'
+import { useChat } from '../context/ChatContext'
 import {
   attachmentApi,
   conversationApi,
   cryptoApi,
   getAccessToken,
-  getLastConversationId,
   groupApi,
   messageApi,
-  setLastConversationId,
 } from '../lib/api'
 import {
   decryptBytes,
@@ -32,15 +32,15 @@ import {
 import { WebSocketClient } from '../lib/websocket'
 
 export default function ChatPage() {
-  const { conversationId } = useParams()
+  const { activeConversationId: conversationId, showDetails } = useChat()
   const navigate = useNavigate()
-  const location = useLocation()
   const { isLoggedIn, user, accessToken, logout, registerWebSocket, unregisterWebSocket } = useAuth()
   const [conversation, setConversation] = useState(null)
   const [messages, setMessages] = useState([])
   const [wsStatus, setWsStatus] = useState('disconnected')
   const [wsMessages, setWsMessages] = useState([])
   const [search, setSearch] = useState('')
+  const [findUsersOpen, setFindUsersOpen] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const wsClientRef = useRef(null)
@@ -73,9 +73,9 @@ export default function ChatPage() {
           local_url: URL.createObjectURL(new Blob([plaintext], { type: attachment.mime_type })),
         }
       }))
-      return { ...message, content_encrypted: content, attachments }
+      return { ...message, content_encrypted: content, content_decrypted: content, attachments }
     } catch {
-      return { ...message, content_encrypted: 'Unable to decrypt message.', attachments: [] }
+      return { ...message, content_decrypted: 'Unable to decrypt message.', attachments: [] }
     }
   }, [])
 
@@ -121,22 +121,19 @@ export default function ChatPage() {
     return sessionKeyRef.current
   }, [conversation, conversationId, user?.id])
 
-  // Persist the selected conversation for restore after page refresh
+  // The selected conversation lives in ChatContext (not the URL); ChatProvider
+  // persists it for restore after refresh. Reset all per-conversation state
+  // (including the session key and seen-message set) when switching chats so
+  // the new conversation is fetched, joined and decrypted cleanly.
   useEffect(() => {
-    if (conversationId) {
-      setLastConversationId(conversationId)
-    }
+    setConversation(null)
+    setMessages([])
+    setWsMessages([])
+    setReplyTo(null)
+    setEditingId(null)
+    sessionKeyRef.current = null
+    seenMessageIdsRef.current = new Set()
   }, [conversationId])
-
-  // If no conversationId in URL but we have a persisted one, restore it
-  useEffect(() => {
-    if (isLoggedIn && !conversationId) {
-      const lastId = getLastConversationId()
-      if (lastId) {
-        navigate(`/test/chat/${lastId}`, { replace: true })
-      }
-    }
-  }, [isLoggedIn, conversationId, navigate])
 
   // Set up WebSocket connection for real-time messaging
   useEffect(() => {
@@ -264,13 +261,22 @@ export default function ChatPage() {
     }
   }, [accessToken])
 
-  // Fetch conversation and messages on mount
+  // Fetch conversation and messages on mount.
+  //
+  // IMPORTANT: this effect must NOT list `ensureSession` (or any callback that
+  // closes over `conversation`) in its dependency array. `ensureSession`'s
+  // identity changes whenever `conversation` changes, and this effect calls
+  // `fetchConversation()` which sets `conversation` — listing it would create an
+  // infinite fetch/re-render loop that orphans the open message menu and breaks
+  // message actions. We call the latest callbacks directly; their own
+  // useCallback deps keep them semantically fresh.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (isLoggedIn && conversationId) {
       fetchConversation()
       ensureSession().finally(fetchMessages)
     }
-  }, [isLoggedIn, conversationId, fetchConversation, fetchMessages, ensureSession])
+  }, [isLoggedIn, conversationId])
 
   const handleReply = (message) => {
     setReplyTo(message)
@@ -436,12 +442,15 @@ export default function ChatPage() {
       const messageContent = content.trim() || (messageType === 'audio' ? 'Voice message' : 'Attachment')
       const encrypted = await encryptMessage(key, messageContent)
       const signature_created_at = new Date().toISOString().replace('Z', '+00:00')
+      // Sign attachments in id order — the canonical order the backend verifier
+      // uses when reconstructing the signed payload.
+      const signedAttachments = [...uploadedAttachments].sort((a, b) => String(a.id).localeCompare(String(b.id)))
       const signature = await signMessage({
         conversation_id: conversationId,
         sender_id: user.id,
         message_type: messageType,
         content_encrypted: encrypted.ciphertext,
-        attachments: uploadedAttachments.map((attachment) => ({
+        attachments: signedAttachments.map((attachment) => ({
           id: attachment.id,
           original_filename: attachment.original_filename,
           mime_type: attachment.mime_type,
@@ -483,18 +492,31 @@ export default function ChatPage() {
     }
   }
 
+  // Merge REST-fetched and WebSocket-received messages into one chronological
+  // list. Dedupe by id (WebSocket copies are freshest) and order strictly by
+  // created_at so live-delivered messages keep their original position even
+  // when they arrived via WebSocket after an older REST snapshot.
+  //
+  // IMPORTANT: this hook must be called unconditionally, BEFORE any early
+  // return (Rules of Hooks). The login check below is a render branch only.
+  const allMessages = useMemo(() => {
+    const byId = new Map()
+    for (const message of messages) {
+      if (message && message.id) byId.set(message.id, message)
+    }
+    for (const message of wsMessages) {
+      if (message && message.id) byId.set(message.id, message)
+    }
+    return Array.from(byId.values()).sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+      return aTime - bTime || String(a.id).localeCompare(String(b.id))
+    })
+  }, [messages, wsMessages])
+
   if (!isLoggedIn) {
     return <p className="text-gray-500">Please log in first.</p>
   }
-
-  // Merge REST-fetched messages with WebSocket-received messages
-  const allMessages = (() => {
-    const restIds = new Set(messages.map((m) => m.id))
-    const wsOnly = wsMessages.filter((m) => !restIds.has(m.id))
-    return [...messages, ...wsOnly]
-  })()
-
-  const showDetails = location.pathname.endsWith('/details')
 
   return (
     <ChatLayout
@@ -503,7 +525,20 @@ export default function ChatPage() {
       search={search}
       onSearchChange={setSearch}
       sidebarContent={
-        <ConversationList activeConversationId={conversationId} search={search} />
+        <>
+          <div className="px-4 pt-3 pb-2 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setFindUsersOpen((open) => !open)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover"
+              aria-expanded={findUsersOpen}
+            >
+              🔍 Search users
+            </button>
+          </div>
+          {findUsersOpen && <UserSearch onClose={() => setFindUsersOpen(false)} />}
+          <ConversationList activeConversationId={conversationId} search={search} />
+        </>
       }
       showDetails={showDetails}
       detailsPanel={
@@ -528,6 +563,7 @@ export default function ChatPage() {
           <MessageList
             messages={allMessages}
             currentUserId={user?.id}
+            sessionReady={Boolean(sessionKeyRef.current)}
             onReply={handleReply}
             onEdit={handleEditMessage}
             onDelete={handleDeleteMessage}

@@ -1,5 +1,10 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
+const API_BASE = (import.meta.env && import.meta.env.VITE_API_URL) || '/api/v1'
 let authFailureHandler = null
+// Called with the new access token after a successful automatic refresh
+// (wired by AuthContext so React state and the WebSocket can re-authenticate).
+let tokenRefreshHandler = null
+// Single-flight promise: concurrent 401s share one /auth/refresh request.
+let refreshAccessTokenPromise = null
 
 export const getAccessToken = () => localStorage.getItem('qrc_access_token') || ''
 export const getRefreshToken = () => localStorage.getItem('qrc_refresh_token') || ''
@@ -15,8 +20,74 @@ export const getLastConversationId = () => localStorage.getItem('qrc_last_conver
 export const setLastConversationId = (id) => localStorage.setItem('qrc_last_conversation', id)
 export const clearLastConversationId = () => localStorage.removeItem('qrc_last_conversation')
 export const setOnAuthFailure = (handler) => { authFailureHandler = handler }
+export const setOnTokenRefresh = (handler) => { tokenRefreshHandler = handler }
 
-async function request(path, options = {}) {
+export function decodeJwtPayload(token) {
+  if (!token) return null
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Refresh the access token using the stored refresh token.
+ *
+ * Single-flight: concurrent callers share the same in-flight request, so a
+ * burst of 401s triggers at most one POST /auth/refresh.
+ *
+ * The refreshed access token is persisted via setTokens() and reported through
+ * tokenRefreshHandler so React state / WebSocket re-auth can react. The refresh
+ * token itself is intentionally not rotated (the backend keeps the same one).
+ *
+ * @returns {Promise<string|null>} The new access token, or null on failure
+ */
+export async function refreshAccessToken() {
+  if (refreshAccessTokenPromise) return refreshAccessTokenPromise
+  refreshAccessTokenPromise = (async () => {
+    const refresh = getRefreshToken()
+    if (!refresh) return null
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      let data = null
+      try { data = await response.json() } catch { /* empty response */ }
+      // Ensure the stored refresh token is unchanged so a concurrent logout cannot
+      // be silently undone by a stale refresh completing afterwards.
+      if (response.status === 200 && data?.access_token && getRefreshToken() === refresh) {
+        setTokens(data.access_token, refresh)
+        if (tokenRefreshHandler) tokenRefreshHandler(data.access_token)
+        return data.access_token
+      }
+      return null
+    } catch {
+      return null
+    }
+  })()
+  try {
+    return await refreshAccessTokenPromise
+  } finally {
+    refreshAccessTokenPromise = null
+  }
+}
+
+/**
+ * Authenticated API request helper.
+ *
+ * On a 401 the access token is refreshed once and the original request is
+ * re-tried once with the new token. /auth/refresh and /auth/login are excluded
+ * (a refresh failure must not recurse, and a login 401 means bad credentials,
+ * not an expired session). If the refresh fails the registered auth-failure
+ * handler runs, which triggers the existing logout behavior.
+ */
+async function request(path, options = {}, retried = false) {
   const isFormData = options.body instanceof FormData
   const headers = { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) }
   const token = getAccessToken()
@@ -24,7 +95,24 @@ async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
   let data = null
   try { data = await response.json() } catch { /* empty response */ }
-  if (response.status === 401 && authFailureHandler) authFailureHandler()
+
+  if (response.status === 401) {
+    const isRefreshPath = path === '/auth/refresh'
+    const isLoginPath = path === '/auth/login'
+    if (!isRefreshPath && !isLoginPath && !retried) {
+      const newToken = await refreshAccessToken()
+      if (newToken) {
+        return request(
+          path,
+          { ...options, headers: { ...headers, Authorization: `Bearer ${newToken}` } },
+          true,
+        )
+      }
+    }
+    // Refresh failed (or this is an endpoint that must not retry): the session
+    // is no longer valid, so hand off to the existing auth-failure behavior.
+    if (authFailureHandler) authFailureHandler()
+  }
   return { status: response.status, data }
 }
 

@@ -6,13 +6,11 @@ import ChatLayout from '../components/chat/ChatLayout'
 import ProfileHeader from '../components/profile/ProfileHeader'
 import ProfileForm from '../components/profile/ProfileForm'
 import ProfileStats from '../components/profile/ProfileStats'
-import DebugPanel from '../components/DebugPanel'
 
 export default function Profile() {
   const { isLoggedIn, user, setUser, logout } = useAuth()
   const [result, setResult] = useState({ response: null, error: null, status: null })
   const [saving, setSaving] = useState(false)
-  const [search, setSearch] = useState('')
   const [pqc, setPqc] = useState(null)
   const [sessions, setSessions] = useState([])
 
@@ -49,48 +47,47 @@ export default function Profile() {
     <ChatLayout
       user={user}
       onLogout={logout}
-      search={search}
-      onSearchChange={setSearch}
+      search=""
+      onSearchChange={() => {}}
       sidebarContent={null}
     >
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto">
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <ProfileHeader user={user} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-            <div className="border-r border-border">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
+            <div className="lg:col-span-3">
               <ProfileForm user={user} onSave={handleSave} saving={saving} />
             </div>
-            <div>
+            <div className="lg:col-span-2">
               <ProfileStats user={user} />
-              <div className="p-4 border-t border-border">
-                <h3 className="font-semibold text-sm text-text-primary">Quantum Security</h3>
-                {pqc ? (
+              {pqc ? (
+                <div className="mt-6 bg-surface rounded-xl border border-border p-4">
+                  <h3 className="font-semibold text-sm text-text-primary uppercase tracking-wide">Quantum Security</h3>
                   <div className="mt-2 text-xs text-text-secondary space-y-1">
                     <div>Algorithms: {pqc.algorithm_version}</div>
                     <div>Key Created: {pqc.created_at ? new Date(pqc.created_at).toLocaleDateString() : 'available'}</div>
                     <div>Quantum Session: {sessions.some((session) => session.status === 'active') ? 'Active' : 'Not established'}</div>
                     {sessions[0] && (
-                      <>
+                      <div>
                         <div>Session Algorithm: {sessions[0].algorithm}</div>
                         <div>Session Created: {new Date(sessions[0].created_at).toLocaleDateString()}</div>
                         <div>Session Expires: {new Date(sessions[0].expires_at).toLocaleDateString()}</div>
-                      </>
+                      </div>
                     )}
                   </div>
-                ) : (
-                  <p className="mt-2 text-xs text-text-muted">Quantum identity keys are unavailable.</p>
-                )}
-              </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-text-muted">Quantum identity keys are unavailable.</p>
+              )}
             </div>
           </div>
           {result.status && (
-            <div className="px-4 py-2">
+            <div className="mt-4 px-4 py-2">
               <span className={`text-sm ${result.status < 300 ? 'text-success' : 'text-danger'}`}>
                 Status: {result.status}
               </span>
             </div>
           )}
-          <DebugPanel response={result.response} error={result.error} />
         </div>
       </div>
     </ChatLayout>

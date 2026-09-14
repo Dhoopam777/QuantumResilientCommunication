@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { authApi } from '../lib/api'
 import { useState } from 'react'
 import ThemeToggle from './common/ThemeToggle'
+import { ShieldIcon, ChatIcon, LogoutIcon } from './icons'
 
 export default function Layout({ children }) {
   const { isLoggedIn, user, logout } = useAuth()
@@ -15,30 +16,37 @@ export default function Layout({ children }) {
   }
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col">
-      <header className="bg-surface-elevated border-b border-border">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/test" className="text-lg font-bold text-text-primary">
-            QRC
+    <div className="min-h-screen flex flex-col">
+      <header className="sticky top-0 z-40 border-b border-border bg-surface/80 backdrop-blur-xl">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <Link to="/test" className="group flex items-center gap-2.5">
+            <span className="brand-mark">
+              <ShieldIcon width="1.1em" height="1.1em" />
+            </span>
+            <span className="text-base font-bold tracking-tight text-text-primary transition-colors group-hover:text-accent">
+              QRC
+            </span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
             {isLoggedIn && user && (
-              <Link to="/test/chat" className="text-sm text-accent hover:underline">
+              <Link to="/test/chat" className="btn-ghost text-sm">
+                <ChatIcon className="w-4 h-4" />
                 Go to Chat
               </Link>
             )}
             <ThemeToggle />
             {isLoggedIn && (
-              <button onClick={logout} className="text-sm text-danger hover:underline">
+              <button onClick={logout} className="btn-ghost text-sm text-danger hover:!text-danger">
+                <LogoutIcon className="w-4 h-4" />
                 Logout
               </button>
             )}
           </div>
         </div>
       </header>
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-6">{children}</main>
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-6 page-enter">{children}</main>
       {unverified && (
-        <div className="fixed bottom-4 right-4 max-w-sm rounded-lg border border-warning bg-surface-elevated p-4 shadow-lg">
+        <div className="fixed bottom-4 right-4 max-w-sm rounded-xl card shadow-popover p-4 panel-enter">
           <p className="text-sm text-text-primary">Verify your email to unlock messaging and groups.</p>
           <button type="button" className="btn-secondary mt-2 text-sm" onClick={resend}>Resend verification email</button>
           {resendState && <p className="text-xs text-text-muted mt-2">{resendState}</p>}

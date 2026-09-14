@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import IconButton from '../common/IconButton'
+import { EmojiIcon, AttachIcon, MicIcon, StopIcon, SendIcon, CloseIcon, FileIcon } from '../icons'
 
 export default function MessageComposer({ onSend, disabled = false, replyTo = null, onCancelReply }) {
   const [content, setContent] = useState('')
@@ -9,6 +10,7 @@ export default function MessageComposer({ onSend, disabled = false, replyTo = nu
   const [voicePreview, setVoicePreview] = useState(null)
   const recorderRef = useRef(null)
   const streamRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -79,37 +81,96 @@ export default function MessageComposer({ onSend, disabled = false, replyTo = nu
     }
   }
 
+  const canSend = (content.trim() || files.length > 0 || Boolean(voicePreview)) && !disabled && !isRecording
+
+  const autoGrow = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }
+
   return (
     <form onSubmit={handleSubmit} className="border-t border-border p-3 flex flex-col gap-2 flex-shrink-0">
       {replyTo && (
-        <div className="flex items-center gap-2 bg-surface-elevated border border-border rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 glass rounded-xl px-3 py-2 panel-enter">
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-primary truncate">{replyTo.is_deleted ? 'Deleted message' : 'Replying to message'}</div>
-            <div className="text-xs text-text-muted truncate">{replyTo.content_encrypted}</div>
+            <div className="text-xs font-semibold text-accent truncate">{replyTo.is_deleted ? 'Deleted message' : 'Replying…'}</div>
+            <div className="text-xs text-text-muted truncate">{replyTo.content_decrypted || replyTo.content_encrypted || ''}</div>
           </div>
-          <button type="button" onClick={onCancelReply} className="icon-btn !p-1 text-xs" title="Cancel reply" aria-label="Cancel reply">x</button>
+          <button type="button" onClick={onCancelReply} className="icon-btn !w-7 !h-7" title="Cancel reply" aria-label="Cancel reply">
+            <CloseIcon className="w-4 h-4" />
+          </button>
         </div>
       )}
       <div className="flex items-end gap-2">
-        <IconButton label="Emoji" disabled title="Emoji picker coming soon">:</IconButton>
-        <label className="icon-btn cursor-pointer" title="Attach encrypted image">
-          <span aria-hidden="true">+</span>
+        <IconButton label="Emoji" disabled title="Emoji picker coming soon" className="!w-9 !h-9 rounded-full">
+          <EmojiIcon className="w-5 h-5" />
+        </IconButton>
+        <label className="icon-btn !w-9 !h-9 rounded-full cursor-pointer" title="Attach encrypted image">
+          <AttachIcon className="w-5 h-5" />
           <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" disabled={disabled} onChange={(event) => setFiles(Array.from(event.target.files || []))} />
         </label>
-        <IconButton label={isRecording ? 'Stop recording' : 'Record voice message'} disabled={disabled} title={isRecording ? 'Stop recording' : 'Record voice message'} onClick={isRecording ? stopRecording : startRecording}>
-          {isRecording ? 'Stop' : 'Voice'}
+        <IconButton
+          label={isRecording ? 'Stop recording' : 'Record voice message'}
+          disabled={disabled}
+          title={isRecording ? 'Stop recording' : 'Record voice message'}
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`!w-9 !h-9 rounded-full ${isRecording ? '!text-danger' : ''}`}
+        >
+          {isRecording ? <StopIcon className="w-4 h-4" /> : <MicIcon className="w-5 h-5" />}
         </IconButton>
-        <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder={replyTo ? 'Reply...' : 'Type a message...'} className="input-base flex-1 resize-none" rows={1} disabled={disabled} aria-label="Message" onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            handleSubmit(event)
-          }
-        }} />
-        <button type="submit" className="btn-primary !px-3 !py-2" disabled={(!content.trim() && files.length === 0 && !voicePreview) || disabled || isRecording} aria-label="Send message">Send</button>
+        <div className="flex-1 min-w-0">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(event) => { setContent(event.target.value); autoGrow() }}
+            placeholder={replyTo ? 'Reply…' : 'Type a message…'}
+            className="input-base flex-1 resize-none rounded-2xl py-2.5 pl-4 pr-4 max-h-40"
+            rows={1}
+            disabled={disabled}
+            aria-label="Message"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                handleSubmit(event)
+              }
+            }}
+          />
+        </div>
+        <button
+          type="submit"
+          className="btn-primary !px-3 !py-2 !rounded-full !w-11 !h-11 shrink-0 flex items-center justify-center"
+          disabled={!canSend}
+          aria-label="Send message"
+          title="Send message"
+        >
+          <SendIcon className="w-5 h-5" />
+        </button>
       </div>
-      {files.length > 0 && <div className="text-xs text-text-muted truncate">{files.map((file) => file.name).join(', ')}</div>}
-      {isRecording && <div className="text-xs text-danger">Recording voice message...</div>}
-      {voicePreview && <div className="flex items-center gap-2 text-xs text-text-muted"><audio controls src={voicePreview.url} aria-label="Voice message preview" /><button type="button" className="icon-btn !p-1" onClick={clearVoicePreview} aria-label="Discard voice message" title="Discard voice message">x</button></div>}
+      {files.length > 0 && (
+        <div className="flex items-center gap-2 text-xs text-text-muted">
+          <FileIcon className="w-3.5 h-3.5" />
+          <span className="truncate">{files.map((file) => file.name).join(', ')}</span>
+        </div>
+      )}
+      {isRecording && (
+        <div className="flex items-center gap-2 text-xs text-danger">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-danger" />
+          </span>
+          Recording voice message…
+        </div>
+      )}
+      {voicePreview && (
+        <div className="flex items-center gap-2 text-xs text-text-muted">
+          <audio controls src={voicePreview.url} aria-label="Voice message preview" className="h-9 max-w-[220px]" />
+          <button type="button" className="icon-btn !w-7 !h-7" onClick={clearVoicePreview} aria-label="Discard voice message" title="Discard voice message">
+            <CloseIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {error && <div className="text-xs text-danger" role="alert">{error}</div>}
     </form>
   )

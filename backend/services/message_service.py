@@ -19,7 +19,7 @@ from models.attachment import Attachment
 from services.crypto_service import CryptoService
 from core.config import settings
 from services.conversation_service import is_participant
-from sqlalchemy import asc
+from sqlalchemy import asc, or_
 
 
 class MessageService:
@@ -474,8 +474,10 @@ class MessageService:
         """
         Retrieve messages for a conversation with pagination.
 
-        Verifies the user is an active participant, then returns non-deleted messages
-        ordered by created_at ASC with limit/offset pagination.
+        Verifies the user is an active participant, then returns messages the
+        requesting user should see (active rows plus soft-deleted "everyone"
+        placeholders, minus their own "me" deletions) ordered by created_at ASC
+        with limit/offset pagination.
 
         Args:
             db: Database session
@@ -506,12 +508,20 @@ class MessageService:
         if not is_participant(db, conversation_id, user_id):
             raise ValueError("User is not a participant in this conversation")
 
-        # Query messages
+        # Soft-deleted "everyone" rows are preserved in the database so the
+        # frontend can keep rendering the "This message was deleted." placeholder
+        # in its original chronological position and on refresh. "me" deletions
+        # are hidden only for the user who deleted them; every other participant
+        # still sees the original message.
         return (
             db.query(Message)
             .filter(
                 Message.conversation_id == conversation_id,
-                Message.is_deleted == False,  # noqa: E712
+                or_(
+                    Message.delete_type.is_(None),
+                    Message.delete_type != "me",
+                    Message.deleted_by != user_id,
+                ),
             )
             .order_by(asc(Message.created_at))
             .limit(limit)
