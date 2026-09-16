@@ -111,10 +111,16 @@ class Device(Base, TimestampMixin):
         cascade="all, delete-orphan", lazy="selectin",
     )
     sessions_as_initiator: Mapped[list["SessionKey"]] = relationship(
-        "SessionKey", back_populates="initiator_device", lazy="selectin",
+        "SessionKey",
+        foreign_keys="SessionKey.initiator_device_id",
+        back_populates="initiator_device",
+        lazy="selectin",
     )
     sessions_as_recipient: Mapped[list["SessionKey"]] = relationship(
-        "SessionKey", back_populates="recipient_device", lazy="selectin",
+        "SessionKey",
+        foreign_keys="SessionKey.recipient_device_id",
+        back_populates="recipient_device",
+        lazy="selectin",
     )
     signed_messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="sender_device", lazy="selectin",

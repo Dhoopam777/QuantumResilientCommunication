@@ -61,10 +61,12 @@ class SessionKey(Base, TimestampMixin):
     initiator_device: Mapped["Device | None"] = relationship(
         "Device",
         foreign_keys=[initiator_device_id],
+        back_populates="sessions_as_initiator",
         lazy="selectin",
     )
     recipient_device: Mapped["Device | None"] = relationship(
         "Device",
         foreign_keys=[recipient_device_id],
+        back_populates="sessions_as_recipient",
         lazy="selectin",
     )
