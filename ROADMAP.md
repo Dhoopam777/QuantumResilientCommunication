@@ -54,7 +54,13 @@ A web-based secure communication platform implementing post-quantum cryptography
 - Status: Planned
 - Deliverables: liboqs integration for ML-KEM/ML-DSA, key generation on registration, key rotation, quantum-safe session establishment, migration from classical crypto
 
-### ⬜ Phase 11: Research & Publication
+### ✅ Phase 11: Multi-Device Schema Foundation (QRC Secure V2 — Phase 1)
+- Status: Completed
+- Deliverables: Additive database schema for multi-device architecture — `devices`, `refresh_tokens`, `security_codes`, `link_tokens`, `device_public_key_history`, `encrypted_envelopes` tables; device FK columns on `session_keys`, `messages`, `attachments`; Alembic migrations 019–022
+- Scope: Schema preparation only. Multi-device behavior is NOT activated. No device authentication, QR/OTC linking, Security Code flow, per-device message encryption, or WebSocket changes were implemented.
+- Security: New schema stores public device keys only. Legacy server-side PQC private-key handling remains unchanged (removal deferred to a later phase). The `encrypted_envelopes` table is storage preparation, not active envelope encryption.
+
+### ⬜ Phase 12: Research & Publication
 - Status: Planned
 - Deliverables: Final year project report, performance benchmarks, security analysis, academic paper draft, public demo
 

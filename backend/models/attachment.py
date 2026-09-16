@@ -132,6 +132,14 @@ class Attachment(Base, TimestampMixin):
     authentication_tag: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     encrypted_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # V2 device identity (nullable for backward compatibility)
+    sender_device_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Device that uploaded/encrypted this attachment (V2; NULL for V1)",
+    )
+
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -155,6 +163,12 @@ class Attachment(Base, TimestampMixin):
     uploader: Mapped["User"] = relationship(
         "User",
         back_populates="attachments",
+        lazy="selectin"
+    )
+
+    sender_device: Mapped[Optional["Device"]] = relationship(
+        "Device",
+        back_populates="signed_attachments",
         lazy="selectin"
     )
 

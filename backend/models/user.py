@@ -171,6 +171,16 @@ class User(Base, TimestampMixin):
     received_conversation_requests: Mapped[list["ConversationRequest"]] = relationship(
         "ConversationRequest", foreign_keys="ConversationRequest.receiver_id", back_populates="receiver"
     )
+    devices: Mapped[list["Device"]] = relationship(
+        "Device",
+        back_populates="user",
+        lazy="selectin",
+    )
+    security_code: Mapped[Optional["SecurityCode"]] = relationship(
+        "SecurityCode",
+        back_populates="user",
+        lazy="selectin",
+    )
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.database import Base
 from models.base import TimestampMixin
@@ -42,3 +42,29 @@ class SessionKey(Base, TimestampMixin):
     )
     algorithm: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # V2 device-level identity (nullable for backward compatibility with V1 sessions)
+    initiator_device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Device that initiated this session (V2; NULL for V1 sessions)",
+    )
+    recipient_device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Device this session is addressed to (V2; NULL for V1 sessions)",
+    )
+
+    # Relationships
+    initiator_device: Mapped["Device | None"] = relationship(
+        "Device",
+        foreign_keys=[initiator_device_id],
+        lazy="selectin",
+    )
+    recipient_device: Mapped["Device | None"] = relationship(
+        "Device",
+        foreign_keys=[recipient_device_id],
+        lazy="selectin",
+    )

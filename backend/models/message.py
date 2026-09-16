@@ -134,6 +134,24 @@ class Message(Base, TimestampMixin):
     nonce: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     authentication_tag: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
+    # V2 device identity columns (nullable for backward compatibility with V1 messages)
+    sender_device_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Device that sent/signed this message (V2; NULL for V1 messages)",
+    )
+    sender_device_uuid: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        nullable=True,
+        comment="Browser-generated device UUID of the sender (V2; must match JWT-bound device)",
+    )
+    sender_device_signature_public_key_snapshot: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Server-recorded snapshot of the sender device's signature public key at signing time",
+    )
+
     # Relationships
     conversation: Mapped["Conversation"] = relationship(
         "Conversation",
@@ -143,6 +161,19 @@ class Message(Base, TimestampMixin):
     sender: Mapped["User"] = relationship(
         "User",
         back_populates="sent_messages"
+    )
+
+    sender_device: Mapped[Optional["Device"]] = relationship(
+        "Device",
+        back_populates="signed_messages",
+        lazy="selectin",
+    )
+
+    envelopes: Mapped[list["EncryptedEnvelope"]] = relationship(
+        "EncryptedEnvelope",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     attachments: Mapped[list["Attachment"]] = relationship(

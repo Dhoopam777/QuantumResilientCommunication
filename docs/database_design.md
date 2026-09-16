@@ -619,6 +619,149 @@ Encrypted Messages
 
 ---
 
+## Multi-Device Architecture Tables (QRC Secure V2 — Phase 1)
+
+The following tables were added as part of Phase 1 (schema foundation). They are additive; no existing tables were destructively altered. Multi-device behavior is NOT activated by these tables alone.
+
+### Devices
+
+**Purpose**: Stores registered devices per user. Each device has its own PQC public keypair (private keys never leave the client).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | Server-assigned device identifier |
+| user_id | UUID | FK → users.id, CASCADE, NOT NULL | Owning user |
+| device_uuid | UUID | UNIQUE, NOT NULL | Client-generated stable identity |
+| name | VARCHAR(255) | NULL | Human label |
+| device_type | VARCHAR(20) | NOT NULL | 'web', 'desktop', or 'mobile' |
+| is_primary | BOOLEAN | NOT NULL, DEFAULT FALSE | True if the user's primary device |
+| kem_public_key | TEXT | NULL | ML-KEM-768 public key (base64) |
+| signature_public_key | TEXT | NULL | ML-DSA-65 public key (base64) |
+| algorithm_version | VARCHAR(64) | NULL | e.g. 'ML-KEM-768+ML-DSA-65' |
+| key_created_at | TIMESTAMPTZ | NULL | Client-reported keypair generation time |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'pending', CHECK IN ('pending','active','revoked','lost') | Lifecycle |
+| authorized_at | TIMESTAMPTZ | NULL | When authorized by primary/recovery |
+| authorized_by_device_id | UUID | FK → devices.id, SET NULL, NULL | Authorizing device |
+| last_seen_at | TIMESTAMPTZ | NULL | Last auth/refresh |
+| security_code_verified_at | TIMESTAMPTZ | NULL | Last security-code verification by this device |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | Soft delete |
+
+**Indexes**: unique `device_uuid`; partial unique `(user_id) WHERE is_primary = true`; `user_id`; `status`; `last_seen_at`
+
+**Security**: Public keys only. No private-key columns.
+
+---
+
+### Refresh Tokens
+
+**Purpose**: Device-bound, revocable refresh-token records. Stores a hash, never the raw token.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | |
+| device_id | UUID | FK → devices.id, CASCADE, NOT NULL | Bound device |
+| token_hash | VARCHAR(64) | UNIQUE, NOT NULL | SHA-256 hash of JWT's random identifier |
+| expires_at | TIMESTAMPTZ | NOT NULL | |
+| is_revoked | BOOLEAN | NOT NULL, DEFAULT FALSE | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**Indexes**: `device_id`; `expires_at`; `is_revoked`
+
+---
+
+### Security Codes
+
+**Purpose**: Account-level security code (one per user). Stores a hash, never the raw code.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | |
+| user_id | UUID | FK → users.id, UNIQUE, CASCADE, NOT NULL | One per user |
+| code_hash | VARCHAR(255) | NOT NULL | Hash of the security code |
+| kdf_params | JSON | NULL | KDF parameters used |
+| code_changed_at | TIMESTAMPTZ | NULL | Last change time |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+---
+
+### Link Tokens
+
+**Purpose**: One-time QR/OTC device linking tokens. Issued by primary; consumed by new device.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | |
+| primary_device_id | UUID | FK → devices.id, CASCADE, NOT NULL | Issuing primary |
+| code | VARCHAR(32) | UNIQUE, NOT NULL | Random one-time code |
+| expires_at | TIMESTAMPTZ | NOT NULL | Typically 10 minutes |
+| used | BOOLEAN | NOT NULL, DEFAULT FALSE | |
+| used_at | TIMESTAMPTZ | NULL | When consumed |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**Indexes**: `primary_device_id`; `expires_at`; `used`
+
+---
+
+### Device Public Key History
+
+**Purpose**: Tracks device public-key rotation history (public keys only). Used to verify signatures signed with historical device keys.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | |
+| device_id | UUID | FK → devices.id, CASCADE, NOT NULL | |
+| kem_public_key | TEXT | NOT NULL | ML-KEM-768 public key at that time |
+| signature_public_key | TEXT | NOT NULL | ML-DSA-65 public key at that time |
+| algorithm_version | VARCHAR(64) | NOT NULL | |
+| valid_from | TIMESTAMPTZ | NOT NULL | When valid |
+| valid_to | TIMESTAMPTZ | NULL | When superseded (NULL = currently valid) |
+
+**Indexes**: `device_id`; `(device_id, valid_from)`
+
+---
+
+### Encrypted Envelopes
+
+**Purpose**: V2 per-recipient-device encrypted message envelopes. Server stores ciphertext but never possesses the AES key.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY | Client-generated, server-preserved |
+| message_id | UUID | FK → messages.id, CASCADE, NOT NULL | Logical message |
+| recipient_device_id | UUID | FK → devices.id, CASCADE, NOT NULL | Target device |
+| ciphertext | TEXT | NOT NULL | AES-256-GCM ciphertext (base64) |
+| nonce | VARCHAR(64) | NOT NULL | 12-byte nonce (base64) |
+| auth_tag | VARCHAR(64) | NOT NULL | 16-byte auth tag (base64) |
+| encryption_version | VARCHAR(32) | NULL | e.g. 'AES-256-GCM' |
+| ciphertext_hash | VARCHAR(64) | NOT NULL | SHA-256 of ciphertext (signature binding) |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**Indexes**: unique `(message_id, recipient_device_id)`; `recipient_device_id`; `message_id`
+
+**Security**: Ciphertext is opaque to the server. Only the recipient device can decrypt.
+
+---
+
+### Extended Existing Tables
+
+**`session_keys`** — Added nullable device FKs:
+- `initiator_device_id` UUID NULL FK → devices.id, ON DELETE SET NULL
+- `recipient_device_id` UUID NULL FK → devices.id, ON DELETE SET NULL
+
+**`messages`** — Added nullable device columns:
+- `sender_device_id` UUID NULL FK → devices.id, ON DELETE SET NULL
+- `sender_device_uuid` VARCHAR(36) NULL
+- `sender_device_signature_public_key_snapshot` TEXT NULL (server-recorded snapshot)
+
+**`attachments`** — Added nullable device FK:
+- `sender_device_id` UUID NULL FK → devices.id, ON DELETE SET NULL
+
+All new columns are nullable for backward compatibility with existing V1 data.
+
+---
+
 ## Future Enhancements
 
 1. **Per-Message Keys**: Add MessageKeys table for forward secrecy in Version 2
