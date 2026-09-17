@@ -3,6 +3,11 @@
 Uses the standardized ML-KEM-768 and ML-DSA-65 implementations exposed by
 the maintained ``pqcrypto`` bindings. Message encryption is intentionally not
 handled here.
+
+PQC private keys are generated on, and never leave, the user's device. This
+module therefore only validates public keys, stores client-supplied KEM
+ciphertext, and verifies device-produced ML-DSA-65 signatures. It never
+generates, encrypts, stores, decrypts, or signs with a PQC private key.
 """
 
 import base64
@@ -10,10 +15,6 @@ import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core.config import settings
 from models.user import User
@@ -27,56 +28,11 @@ SIGNATURE_ALGORITHM = "ML-DSA-65"
 
 
 class CryptoService:
-    """Generate PQC identity keys and protect private material at rest."""
-
-    @staticmethod
-    def _cipher() -> Fernet:
-        configured_key = settings.PQC_MASTER_KEY.strip()
-        try:
-            raw_key = base64.b64decode(
-                configured_key.encode("ascii"),
-                altchars=b"-_",
-                validate=True,
-            )
-        except (UnicodeEncodeError, ValueError, base64.binascii.Error) as exc:
-            raise RuntimeError(
-                "PQC_MASTER_KEY must be a URL-safe base64-encoded 32-byte key"
-            ) from exc
-        if (
-            len(raw_key) != 32
-            or base64.urlsafe_b64encode(raw_key).decode("ascii") != configured_key
-        ):
-            raise RuntimeError(
-                "PQC_MASTER_KEY must be a URL-safe base64-encoded 32-byte key"
-            )
-        return Fernet(configured_key.encode("ascii"))
+    """Validate public PQC keys and verify device-produced signatures."""
 
     @staticmethod
     def _encode(value: bytes) -> str:
         return base64.b64encode(value).decode("ascii")
-
-    @staticmethod
-    def _encrypt(value: bytes) -> str:
-        return CryptoService._cipher().encrypt(value).decode("ascii")
-
-    @staticmethod
-    def decrypt_private_key(value: str) -> bytes:
-        """Legacy migration compatibility for pre-device identities only."""
-        return CryptoService._cipher().decrypt(value.encode("ascii"))
-
-    @staticmethod
-    def generate_identity(user: User) -> None:
-        """Legacy-only identity generation for existing migration tests/users."""
-        if not settings.PQC_ENABLED or settings.PQC_ALGORITHM != ALGORITHM_VERSION:
-            raise RuntimeError("PQC identity generation is unavailable")
-        kem_public, kem_private = ml_kem_768.generate_keypair()
-        signature_public, signature_private = ml_dsa_65.generate_keypair()
-        user.pq_kem_public_key = CryptoService._encode(kem_public)
-        user.pq_kem_private_key_encrypted = CryptoService._encrypt(kem_private)
-        user.pq_signature_public_key = CryptoService._encode(signature_public)
-        user.pq_signature_private_key_encrypted = CryptoService._encrypt(signature_private)
-        user.pq_algorithm_version = ALGORITHM_VERSION
-        user.pq_key_created_at = datetime.now(timezone.utc)
 
     @staticmethod
     def _decode(value: str) -> bytes:
@@ -92,42 +48,6 @@ class CryptoService:
         signature = CryptoService._decode(signature_public_key)
         if len(kem) != ml_kem_768.PUBLIC_KEY_SIZE or len(signature) != ml_dsa_65.PUBLIC_KEY_SIZE:
             raise ValueError("Invalid public key size")
-
-    @staticmethod
-    def _derive_session_key(shared_secret: bytes, ciphertext: bytes) -> bytes:
-        return HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=ciphertext,
-            info=b"qrc/ml-kem-768/session/aes-256",
-        ).derive(shared_secret)
-
-    @staticmethod
-    def create_session(
-        initiator_id: uuid.UUID,
-        recipient: User,
-        conversation_id: uuid.UUID,
-    ) -> tuple[SessionKey, bytes]:
-        """Legacy compatibility for pre-device sessions."""
-        if not settings.PQC_ENABLED or not recipient.pq_kem_public_key:
-            raise RuntimeError("PQC session establishment is unavailable")
-        public_key = CryptoService._decode(recipient.pq_kem_public_key)
-        ciphertext, shared_secret = ml_kem_768.encrypt(public_key)
-        try:
-            session_key = CryptoService._derive_session_key(shared_secret, ciphertext)
-        finally:
-            del shared_secret
-        session = SessionKey(
-            conversation_id=conversation_id,
-            initiator_id=initiator_id,
-            recipient_id=recipient.id,
-            kem_ciphertext=CryptoService._encode(ciphertext),
-            session_key_id=uuid.UUID(bytes=secrets.token_bytes(16), version=4),
-            algorithm=ALGORITHM_VERSION,
-            expires_at=datetime.now(timezone.utc)
-            + timedelta(minutes=settings.PQC_SESSION_TTL_MINUTES),
-        )
-        return session, session_key
 
     @staticmethod
     def create_client_session(
@@ -155,24 +75,6 @@ class CryptoService:
             expires_at=datetime.now(timezone.utc)
             + timedelta(minutes=settings.PQC_SESSION_TTL_MINUTES),
         )
-
-    @staticmethod
-    def recover_session(session: SessionKey, recipient: User) -> bytes:
-        """Decapsulate and derive the same AES-256 session key."""
-        if session.recipient_id != recipient.id:
-            raise PermissionError("Session recipient mismatch")
-        if CryptoService.expire_session(session):
-            raise RuntimeError("Session has expired")
-        if not recipient.pq_kem_private_key_encrypted:
-            raise RuntimeError("Legacy session key unavailable")
-        private_key = CryptoService.decrypt_private_key(recipient.pq_kem_private_key_encrypted)
-        ciphertext = CryptoService._decode(session.kem_ciphertext)
-        shared_secret = ml_kem_768.decrypt(private_key, ciphertext)
-        try:
-            return CryptoService._derive_session_key(shared_secret, ciphertext)
-        finally:
-            del private_key
-            del shared_secret
 
     @staticmethod
     def expire_session(session: SessionKey) -> bool:
@@ -210,36 +112,6 @@ class CryptoService:
             "timestamp": timestamp,
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-    @staticmethod
-    def sign_message(
-        user: User,
-        conversation_id: uuid.UUID,
-        message_type: str,
-        content_encrypted: str,
-        signature_created_at: datetime,
-        attachments_metadata: list[dict] | None = None,
-    ) -> str:
-        """Legacy compatibility for messages created before device migration."""
-        if user is None or not user.pq_signature_private_key_encrypted:
-            raise RuntimeError("Sender signing key unavailable")
-        private_key = CryptoService.decrypt_private_key(user.pq_signature_private_key_encrypted)
-        try:
-            return CryptoService._encode(
-                ml_dsa_65.sign(
-                    private_key,
-                    CryptoService._message_payload(
-                        conversation_id,
-                        user.id,
-                        message_type,
-                        content_encrypted,
-                        signature_created_at,
-                        attachments_metadata,
-                    ),
-                )
-            )
-        finally:
-            del private_key
 
     @staticmethod
     def verify_message(

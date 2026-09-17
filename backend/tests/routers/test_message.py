@@ -18,6 +18,16 @@ from core.websocket_events import (
 )
 from services.message_service import send_message
 
+from tests.pqc_helpers import install_signing_api_calls, install_signing_service_calls
+
+
+@pytest.fixture(autouse=True)
+def _client_signs_messages(client, db_session, monkeypatch):
+    # Model a real client: outgoing messages carry device-produced signatures.
+    install_signing_api_calls(client, db_session, monkeypatch)
+    install_signing_service_calls(db_session, monkeypatch, globals())
+
+
 
 def _delete(client, url, mode, headers):
     """Send a DELETE request with JSON body via httpx-compatible API."""

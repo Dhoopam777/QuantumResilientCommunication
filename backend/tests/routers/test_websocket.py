@@ -36,6 +36,15 @@ from core.websocket_events import (
 )
 from managers.connection_manager import connection_manager
 
+from tests.pqc_helpers import install_signing_api_calls
+
+
+@pytest.fixture(autouse=True)
+def _client_signs_messages(client, db_session, monkeypatch):
+    # Model a real client: message-creation requests carry device signatures.
+    install_signing_api_calls(client, db_session, monkeypatch)
+
+
 
 class TestWebSocketAuth:
     """Tests for WebSocket authentication."""

@@ -9,7 +9,7 @@ from core.security import create_access_token
 from models.user import User
 from pqcrypto.kem import ml_kem_768
 from pqcrypto.sign import ml_dsa_65
-from services.crypto_service import CryptoService
+from tests.pqc_helpers import register_device_public_keys
 
 
 def headers(user):
@@ -71,7 +71,7 @@ def test_registration_uses_client_device_keys(client, monkeypatch):
 def test_public_key_api_excludes_private_material(client, db_session, test_user, monkeypatch):
     monkeypatch.setattr(settings, "PQC_ENABLED", True)
     monkeypatch.setattr(settings, "PQC_MASTER_KEY", master_key())
-    CryptoService.generate_identity(test_user)
+    register_device_public_keys(test_user)
     db_session.commit()
     response = client.get(
         f"/api/v1/crypto/public-key/{test_user.username}",

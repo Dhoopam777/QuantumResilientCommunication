@@ -21,6 +21,17 @@ from models.message import Message
 from models.conversation import Conversation
 from models.conversation_participant import ConversationParticipant
 
+from tests.pqc_helpers import install_signing_service_calls
+
+
+@pytest.fixture(autouse=True)
+def _client_signs_messages(db_session, monkeypatch):
+    # Model a real client: outgoing messages carry device-produced signatures.
+    # These tests exercise message CRUD behaviour, not signing, so the client
+    # signature is supplied automatically, exactly as a real device would.
+    install_signing_service_calls(db_session, monkeypatch, globals())
+
+
 
 class TestSendMessage:
     """Tests for send_message()"""

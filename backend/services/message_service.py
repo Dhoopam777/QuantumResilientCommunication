@@ -14,9 +14,7 @@ from sqlalchemy.orm import Session
 
 from models.message import Message
 from models.conversation import Conversation
-from models.user import User
 from models.attachment import Attachment
-from services.crypto_service import CryptoService
 from core.config import settings
 from services.conversation_service import is_participant
 from sqlalchemy import asc, or_
@@ -158,7 +156,6 @@ class MessageService:
         MessageService._validate_reply_target(db, conversation_id, reply_to_message_id)
 
         signature_created_at = signature_created_at or datetime.now(timezone.utc)
-        sender = db.query(User).filter(User.id == sender_id).first()
         attachments = []
         if attachment_ids:
             attachments = (
@@ -174,35 +171,11 @@ class MessageService:
             )
             if len(attachments) != len(set(attachment_ids)):
                 raise ValueError("Invalid attachment")
-            attachments_metadata = [
-                {
-                    "id": str(attachment.id),
-                    "original_filename": attachment.original_filename,
-                    "mime_type": attachment.mime_type,
-                    "file_size": attachment.file_size,
-                    "checksum_sha256": attachment.checksum_sha256,
-                    "width": attachment.width,
-                    "height": attachment.height,
-                }
-                for attachment in attachments
-            ]
-        client_signature = signature
-        signature = client_signature
-        signature_algorithm = None
+        # The ML-DSA-65 signing key never leaves the sender's device. When PQC is
+        # enabled a client-produced signature is mandatory: the server rejects the
+        # message rather than generating a signature on the sender's behalf.
         if settings.PQC_ENABLED and not signature:
-            if sender is None:
-                raise ValueError("Message authentication failed")
-            try:
-                signature = CryptoService.sign_message(
-                    sender,
-                    conversation_id,
-                    message_type,
-                    content_encrypted,
-                    signature_created_at,
-                    attachments_metadata,
-                )
-            except (RuntimeError, ValueError):
-                raise ValueError("Message authentication failed")
+            raise ValueError("Message authentication failed")
         # Create the message
         message = Message(
             conversation_id=conversation_id,
@@ -317,22 +290,12 @@ class MessageService:
         # Update only the text content fields
         message.content_encrypted = content_encrypted
         message.content_hash = hashlib.sha256(content_encrypted.encode("utf-8")).hexdigest()
+        # The ML-DSA-65 signing key never leaves the sender's device. When PQC is
+        # enabled a client-produced signature is mandatory: the server rejects the
+        # edit rather than generating a signature on the sender's behalf.
         if settings.PQC_ENABLED and not signature:
-            sender = db.query(User).filter(User.id == user_id).first()
-            try:
-                signature_created_at = datetime.now(timezone.utc)
-                message.signature = CryptoService.sign_message(
-                    sender,
-                    message.conversation_id,
-                    message.message_type,
-                    content_encrypted,
-                    signature_created_at,
-                )
-                message.signature_algorithm = "ML-DSA-65"
-                message.signature_created_at = signature_created_at
-            except (RuntimeError, ValueError):
-                raise ValueError("Message authentication failed")
-        elif signature:
+            raise ValueError("Message authentication failed")
+        if signature:
             message.signature = signature
             message.signature_algorithm = "ML-DSA-65"
             message.signature_created_at = signature_created_at or datetime.now(timezone.utc)
